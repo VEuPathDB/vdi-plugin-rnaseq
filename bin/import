@@ -1,40 +1,190 @@
-#!/usr/bin/env bash
+#!/usr/bin/perl
 
-# Get the current workspace directory.
-BIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-# Get the lib directory
-LIB_DIR="$(cd -- "$(dirname -- "$BIN_DIR")" &> /dev/null && pwd)/lib"
+use strict;
+use Data::Dumper;
+use File::Copy;
 
-# Include some common functionality
-. "$LIB_DIR/includes.sh"
+# constants
+my $MANIFEST_FILE = 'manifest.txt';
+my $VALIDATION_ERR_CODE = 1;
+my @VALID_STRAND_TYPE = ('unstranded', 'sense', 'antisense');
+my $SAMPLE_REGEX = 
 
-#
-# Utilities
-#
+usage() unless scalar(@ARGV) == 2;
+my ($inputDir, $outputDir) = @ARGV;
 
-printWarning() {
-  echo "$1"
+validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/$MANIFEST_FILE";
+open my $fh, "$inputDir/$MANIFEST_FILE" or die "Can't open '$inputDir/$MANIFEST_FILE'\n";
+copy("inputDir/$MANIFEST_FILE", "outputDir/$MANIFEST_FILE");
+
+my @line = parseManifestLine(<$fh>);
+
+# validation methods are driven by manifest file, and copy mentioned files to outputDir
+if ($line[2] eq 'unstranded') {
+  validateUnstranded($fh, \@line);
+} else {
+  validateStranded($fh, \@line);
 }
 
-#
-# Parameter Handling
-#
+# there should now be the same number of files in inputDir and outputDir
+opendir my $dh, $inputDir;
+my $numInputFiles = () = readdir($dh);
+opendir $dh, $outputDir;
+my $numOutputFiles = () = readdir($dh);
+validationError("Files and manifest do not agree.  Wrong number of files") unless $numInputFiles == $numOutputFiles;
 
-INPUT_DIR=$1
-OUTPUT_DIR=$2
+############################################################################################################
 
-verifyDir "${INPUT_DIR}"  || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyDir "${OUTPUT_DIR}" || exit $EXIT_CODE_UNEXPECTED_ERROR
+sub validateUnstranded {
+  my ($fh, $firstLine) = @_;
 
-#
-# Script Body
-#
+  my $samples = {};
+  my $files = {};
+  my $bwCount;
+  my $txtCount;
+  my $sampleNames = [];
 
-logMessage "Here's a log message that will be printed to STDERR"
+  my ($sampleName, $fileName, $strandInfo) = @$firstLine;
+  # read manifest file, and process each line
+  do {
+    validationError("Illegal strand info '$strandInfo'") unless $strandInfo eq $VALID_STRAND_INFO[0];
+    $fileName =~ /.*\.(bw|txt)$/ or validationError("Invalid file name '$fileName'.  Must have .bw or .txt extension");
+    my $extension = $1;
+    $bwCount++ if $extension eq 'bw';
+    validationError("Sample '$sampleName' with '$extension' repeated in manifest") if $samples->{$sampleName}->{$extension};
+    $samples->{$sampleName}->{$extension} = 1;
+    push(@$sampleNames, $sampleName);
+    validationError("Repeated file name '$fileName'") if $files->{$fileName};
+    $files->{$fileName} = 1;
+    my $ofn = $fileName;
+    my $ofn =~ s/^\.-\w/_/g;  # replace icky chars with underscore
+    copy("$inputDir/$fileName", "$outputDir/$ofn");
+  } while(($sampleName, $fileName, $strandInfo) = parseManifestLine(<$fh>));
 
-for file in "${INPUT_DIR}"/*; do
-  logMessage "Copying ${file} to ${OUTPUT_DIR}"
-  printWarning "Here's a validation warning about ${file} that will be printed to STDOUT"
-  # validate "$file" || exit $EXIT_CODE_VALIDATION_ERROR
-  cp "${file}" "${OUTPUT_DIR}"
-done
+  validationError("Missing some .bw files") unless $bwCount == 0 or $bwCount = scalar(@$sampleNames);
+  validationError("Missing some .txt files") unless $txtCount = scalar(@$sampleNames);
+}
+
+while(<$fh>) { # TODO:  need example of how this looks
+  chomp;
+  my ($panName, $filename, $strandInfo) = split(/\t/, $_);
+
+  
+
+  my ($idIndex, $fpkmIndex);
+  open(DAT, $filename) or die "Cannot open file $filename for reading: $!";
+
+  # check header to distinguish file type
+  my $unit;
+  my $header = <DAT>;
+  chomp($header);
+
+  if ($header eq "tracking_id\tclass_code\tnearest_ref_id\tgene_id\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status") {
+    # Cufflinks FPKM file
+    $idIndex = 0;
+    $fpkmIndex = 9;
+    $unit = "FPKM";
+  } elsif ($header eq "gene_id\tFPKM") {
+    # FPKMtool file
+    $idIndex = 0;
+    $fpkmIndex = 1;
+    $unit = "FPKM";
+  } elsif ($header eq "gene_id\tTPM") {
+    # TPMtool file
+    $idIndex = 0;
+    $fpkmIndex = 1;
+    $unit = "TPM";
+  } else {
+    markDatasetInvalid($dbh, $userDatasetId, "unrecognized header record. Not a valid transcript abundance file.");
+  }
+
+  $updateProfileSetUnit->execute($unit, $psId);
+
+  while(<DAT>) {
+    chomp;
+
+    my @a = split(/\t/, $_);
+
+    my $sourceId = $a[$idIndex];
+    my $fpkm = $a[$fpkmIndex];
+
+    next unless($sourceId);
+
+
+    unless(%geneIds) {
+      &makeGeneSourceIdMapping($sourceId, $dbh);
+    }
+
+    my $naFeatureId = $geneIds{$sourceId};
+    unless($naFeatureId) {
+      print "WARN: Could not find an na_feature_id for source_id $sourceId";
+      next;
+    }
+
+
+    $insertNaFeatureExpression->execute($panId, $naFeatureId, $fpkm);
+
+    $dbh->commit if ($count++ % 1000 == 0);    
+  }
+
+  $dbh->commit;
+  $orderNum++;
+}
+
+sub validationError {
+  my ($msg) = @_;
+
+  print STDOUT "$msg\n";
+  exit($VALIDATION_ERR_CODE);
+}
+
+sub parseManifestLine {
+  my ($line) = @_;
+
+  my @line = split(/\t/, $line);
+
+  validationErr("Invalid manifest file.  Wrong number of columns: '$line'\n")
+    unless scalar(@line) == 3;
+
+  my ($sampleName, $fileName, $strandInfo) = @line;
+
+  validationErr("Invalid manifest file.  Illegal third column value '$strandInfo'.  Must be 'unstranded', 'sense' or 'antisense'")
+    unless grep( /^$line[2]$/, @VALID_STRAND_TYPE );
+
+  
+
+  return @line;
+}
+
+
+sub usage {
+  die "
+Usage: {} input_dir output_dir
+
+Prepare and validate an Rna Seq dataset for import.
+
+input_dir: must contain the original dataset files, and no other files.
+output_dir: will contain the import-ready set of files.  In this case, the same as input.
+
+All samples must include .txt files.  Either all samples or no samples must include .bw files (no in between).
+
+input_dir will contain:
+  $MANIFEST_FILE file with one line per file:
+    for txt file:
+      samplename filename strandinfo ('unstranded', 'sense' or 'antisense')
+    for bw file:
+      samplename filename strandinfo ('unstranded', 'strandone' or 'strandtwo')
+
+  there will be one or more samples
+
+  sample files have cannonical names:
+     unstranded: FILE_NAME.bw and FILE_NAME.txt
+     stranded:
+       -FILE_NAME.forward.bw
+       -FILE_NAME.reverse.bw
+       -FILE_NAME.one.txt
+       -FILE_NAME.two.txt
+
+If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
+";
+}
