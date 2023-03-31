@@ -30,6 +30,40 @@ validationError("Files and manifest do not agree.  Wrong number of files") unles
 
 ############################################################################################################
 
+sub usage {
+  die "
+Usage: import input_dir output_dir
+
+Prepare and validate an Rna Seq dataset for import.
+
+input_dir: must contain the original dataset files, and no other files.
+output_dir: will contain the import-ready set of files.  In this case, the same as input.
+
+All samples must include .txt files.  Either all samples or no samples must include .bw files (no in between).
+
+input_dir will contain:
+  $MANIFEST_FILE file with one line per file:
+    for txt file:
+      samplename filename strandinfo ('unstranded', 'sense' or 'antisense')
+    for bw file:
+      samplename filename strandinfo ('unstranded', 'strandone' or 'strandtwo')
+
+  there will be one or more samples
+
+  sample files have cannonical names:
+     unstranded: 
+       -FILE_NAME.bw
+       -FILE_NAME.txt
+     stranded:
+       -FILE_NAME.forward.bw
+       -FILE_NAME.reverse.bw
+       -FILE_NAME.one.txt
+       -FILE_NAME.two.txt
+
+If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
+";
+}
+
 sub readAndValidateManifestLine {
   my ($fh) = @_;
 
@@ -197,39 +231,4 @@ sub validationError {
 
   print STDOUT "$msg\n";
   exit($VALIDATION_ERR_CODE);
-}
-
-
-sub usage {
-  die "
-Usage: import input_dir output_dir
-
-Prepare and validate an Rna Seq dataset for import.
-
-input_dir: must contain the original dataset files, and no other files.
-output_dir: will contain the import-ready set of files.  In this case, the same as input.
-
-All samples must include .txt files.  Either all samples or no samples must include .bw files (no in between).
-
-input_dir will contain:
-  $MANIFEST_FILE file with one line per file:
-    for txt file:
-      samplename filename strandinfo ('unstranded', 'sense' or 'antisense')
-    for bw file:
-      samplename filename strandinfo ('unstranded', 'strandone' or 'strandtwo')
-
-  there will be one or more samples
-
-  sample files have cannonical names:
-     unstranded: 
-       -FILE_NAME.bw
-       -FILE_NAME.txt
-     stranded:
-       -FILE_NAME.forward.bw
-       -FILE_NAME.reverse.bw
-       -FILE_NAME.one.txt
-       -FILE_NAME.two.txt
-
-If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
-";
 }
