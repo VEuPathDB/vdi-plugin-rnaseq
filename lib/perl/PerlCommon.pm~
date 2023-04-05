@@ -1,0 +1,5 @@
+package PerlCommon;
+
+use strict;
+
+1;

@@ -1,62 +1,114 @@
 #!/usr/bin/perl
 
 use strict;
-use lib "$ENV{GUS_HOME}/lib/perl";
-
-use GUS::Supported::GusConfig;
-use GUS::ObjRelP::DbiDatabase;
-
+use DBI;
 use Data::Dumper;
+use FindBin;
+use lib "$FindBin::Bin/../lib/perl";
+use RnaSeqHandlerCommon;
 
-use File::Find;
-use File::Basename;
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'JBROWSE_TRACKS_DIR');
 
-my ($userDatasetId, $manifestFile, $projectId) = @ARGV;
+sub usage {
+  my $envStr = join(", \$", @envVars);
+
+  die "
+Install an RNASeq user dataset into a website.
+
+The dataset will include one or more .txt files (FPKM), and, optionally, parallel .bw files.  The
+former are installed into the AppDB;  the latter into web service files.
+
+Usage: install-data user_dataset_id filesDir metajsonFile
+Where:
+  user_dataset_id:  a user dataset id
+  filesDir:         directory containing data files.  See import script for details.
+  metajsonFile:     not used
+
+ASSUMES THE DATASET IS PRE-VALIDATED DURING IMPORT.  See the import script.
+
+Env: \$$envStr
+";
+}
+
+my ($userDatasetId, $filesDir, $metajsonFile) = @ARGV;
 
 usage() unless scalar(@ARGV) == 3;
 
-my $gusconfig = GUS::Supported::GusConfig->new("$ENV{GUS_HOME}/config/$projectId/gus.config");
+for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
 
-my $db = GUS::ObjRelP::DbiDatabase->new($gusconfig->getDbiDsn(),
-                                        $gusconfig->getDatabaseLogin(),
-                                        $gusconfig->getDatabasePassword(),
-                                        0,0,1,
-                                        $gusconfig->getCoreSchemaName());
+##################################################
+# initialization for installing txt files to appdb
+##################################################
 
-my $dbh = $db->getQueryHandle(0);
+my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}:database=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}", $ENV{DB_USER}, $ENV{DB_PASS})
+    || die "Couldn't connect to database: " . DBI->errstr;
 $dbh->{RaiseError} = 1;
+my %profileSetIds;
+my $orderNum = 1;
+my $count = 0;
+my %geneIds;
+my ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocolAppNode, $insertNaFeatureExpression, $unswitchProfiles)  = initializePreparedStmts();
 
-my $panPkSql = "select ApiDBUserDatasets.UD_ProtocolAppNode_sq.nextval from dual";
-my $panPkSh = $dbh->prepare($panPkSql);
+#################################################################################
+# iterate through lines of manifest file, processing each file (either txt or bw)
+#################################################################################
 
-my $psPkSql = "select ApiDBUserDatasets.UD_ProfileSet_sq.nextval from dual";
-my $psPkSh = $dbh->prepare($psPkSql);
+open my $fh, $MANIFEST_FILE or die "Can't open manifest file '$MANIFEST_FILE' for reading:  $!";
 
-my $insertProfileSet = $dbh->prepare(<<EOF);
+# manifest file columns:
+#    sampleName fileName strandInfo ('unstranded', 'sense' or 'antisense')
+while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $filesDir)) {
+  if ($filename =~ /(.+)\.txt$/) {
+    installTxtFile($panName, $filename, $strand);
+  } else {
+    installBwFile($filename);
+  }
+}
+
+######################################
+# do final processing for appdb
+######################################
+$unswitchProfiles->execute($userDatasetId);
+$dbh->commit;
+
+
+
+################################ subroutines   ##################################################################
+
+sub initializePreparedStmts {
+
+  my $panPkSql = "select ApiDBUserDatasets.UD_ProtocolAppNode_sq.nextval from dual";
+  my $panPkSh = $dbh->prepare($panPkSql);
+
+  my $psPkSql = "select ApiDBUserDatasets.UD_ProfileSet_sq.nextval from dual";
+  my $psPkSh = $dbh->prepare($psPkSql);
+
+  my $insertProfileSet = $dbh->prepare(<<EOF);
     INSERT INTO apidbUserDatasets.UD_ProfileSet
     (user_dataset_id, profile_set_id, name)
     VALUES (?,?,?)
 EOF
 
-my $updateProfileSetUnit = $dbh->prepare(<<EOF);
+  my $updateProfileSetUnit = $dbh->prepare(<<EOF);
     UPDATE apidbUserDatasets.UD_ProfileSet
     SET unit = ?
     WHERE profile_set_id = ?
 EOF
 
-my $insertProtocolAppNode = $dbh->prepare(<<EOF);
+  my $insertProtocolAppNode = $dbh->prepare(<<EOF);
     INSERT INTO apidbUserDatasets.UD_ProtocolAppNode
     (protocol_app_node_id, profile_set_id, name, node_order_num)
     VALUES (?,?,?,?)
 EOF
 
-my $insertNaFeatureExpression = $dbh->prepare(<<EOF);
+  my $insertNaFeatureExpression = $dbh->prepare(<<EOF);
     INSERT INTO apidbUserDatasets.UD_NaFeatureExpression
     (na_feat_expression_id, protocol_app_node_id, na_feature_id, value)
     VALUES (ApiDBUserDatasets.UD_NaFeatureExpression_sq.nextval,?,?,?)
 EOF
 
-my $unswitchProfiles = $dbh->prepare(<<EOF);
+  # query to switch the sense of stranded data if sense.median < antisense.median
+  my $unswitchProfiles = $dbh->prepare(<<EOF);
 update apidbUserDatasets.ud_ProfileSet
 set name = case name
              when 'sense' then 'antisense'
@@ -86,38 +138,24 @@ where user_dataset_id = ?
             and sense.median < antisense.median)
 EOF
 
+    return ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocolAppNode, $insertNaFeatureExpression, $unswitchProfiles);
 
-my %profileSetIds;
+}
 
-open my $fh, $manifestFile or die "Can't open manifest file \"$manifestFile\" for reading:  $!";
-
-my $orderNum = 1;
-my $count = 0;
-
-my %geneIds;
-
-my $dirname = dirname $manifestFile;
-
-
-while(<$fh>) { # TODO:  need example of how this looks
-  chomp;
-  my ($panName, $filename, $group) = split(/\t/, $_);
-
-  $group = "PROFILE_1" unless($group);
-
-  next unless($filename =~ /(.+)\.txt$/);
+sub installTxtFile {
+  my ($panName, $filename, $strand) = @_;
 
   my $psId;
-  if($profileSetIds{$group}) {
-    $psId = $profileSetIds{$group};
+  if ($profileSetIds{$strand}) {
+    $psId = $profileSetIds{$strand};
   }
   else {
     $psPkSh->execute();
     ($psId) = $psPkSh->fetchrow_array();
 
-    $insertProfileSet->execute($userDatasetId, $psId, $group);
+    $insertProfileSet->execute($userDatasetId, $psId, $strand);
 
-    $profileSetIds{$group} = $psId;
+    $profileSetIds{$strand} = $psId;
   }
 
   $panPkSh->execute();
@@ -149,7 +187,7 @@ while(<$fh>) { # TODO:  need example of how this looks
     $fpkmIndex = 1;
     $unit = "TPM";
   } else {
-    markDatasetInvalid($dbh, $userDatasetId, "unrecognized header record. Not a valid transcript abundance file.");
+    validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
   }
 
   $updateProfileSetUnit->execute($unit, $psId);
@@ -164,9 +202,8 @@ while(<$fh>) { # TODO:  need example of how this looks
 
     next unless($sourceId);
 
-
     unless(%geneIds) {
-      &makeGeneSourceIdMapping($sourceId, $dbh);
+      &makeGeneSourceIdMapping($sourceId, $dbh); # initialize all mapping of all source_ids for this organism.
     }
 
     my $naFeatureId = $geneIds{$sourceId};
@@ -185,25 +222,6 @@ while(<$fh>) { # TODO:  need example of how this looks
   $orderNum++;
 }
 
-$unswitchProfiles->execute($userDatasetId);
-
-$dbh->commit;
-
-sub markDatasetInvalid {
-  my ($dbh, $userDatasetId, $reason) = @_;
-
-  my $updateIud = $dbh->prepare(<<EOF) or die $dbh->errstr;
-    update apidbUserDatasets.InstalledUserDataset
-    set is_invalid = 1,
-        invalid_reason = ?
-    where user_dataset_id = ?
-EOF
-
-  $updateIud->execute($reason, $userDatasetId) or die $dbh->errstr;
-  $dbh->commit;
-  exit;
-}
-
 sub makeGeneSourceIdMapping {
   my ($sourceId, $dbh) = @_;
 
@@ -218,15 +236,17 @@ sub makeGeneSourceIdMapping {
   $sh->finish();
 }
 
-sub usage {
-  die "
-Install an RNASeq user dataset in the user dataset schema.
-Usage installRnaSeqUserDataset user_dataset_id manifest.txt project_id
-Where:
-  user_dataset_id:  a user dataset id
-  manifest:         a txt file with one file name per line
-  project_id:       PlasmoDB, etc.
-Finds gus.config in \$GUS_HOME/config/project_id/gus.config
-";
+sub installBwFile {
+  my ($bwFile) = @_;
+
+  # TODO
 }
+
+sub validationError {
+  my ($msg) = @_;
+
+  print STDOUT "$msg\n";
+  exit($VALIDATION_ERR_CODE);
+}
+
 

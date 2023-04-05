@@ -3,11 +3,9 @@
 use strict;
 use Data::Dumper;
 use File::Copy;
-
-# constants
-my $MANIFEST_FILE = 'manifest.txt';
-my $VALIDATION_ERR_CODE = 1;
-my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense');
+use FindBin;
+use lib "$FindBin::Bin/../lib/perl";
+use RnaSeqHandlerCommon;
 
 usage() unless scalar(@ARGV) == 2;
 my ($inputDir, $outputDir) = @ARGV;
@@ -16,7 +14,7 @@ validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/
 copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file\n";
 
 open(my $fh, "$inputDir/$MANIFEST_FILE") or die "Can't open '$inputDir/$MANIFEST_FILE'\n";
-my @line = readAndValidateManifestLine($fh);
+my @line = readAndValidateManifestLine($fh, $inputDir);
 
 # validation methods are driven by manifest file. included files are copied to outputDir
 $line[2] eq 'unstranded'? validateUnstranded($fh, \@line) : validateStranded($fh, \@line);
@@ -64,32 +62,6 @@ If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT w
 ";
 }
 
-sub readAndValidateManifestLine {
-  my ($fh) = @_;
-
-  #skip blank lines
-  my $line;
-  do {
-    $line = <$fh>;
-    return () unless $line;
-    chomp $line;
-  } while (!$line);
-
-  my @line = split(/\t/, $line);
-
-  validationError("Invalid manifest file.  Wrong number of columns: '$line'\n")
-    unless scalar(@line) == 3;
-
-  my ($sampleName, $filename, $strandInfo) = @line;
-
-  validationError("Invalid manifest file third column value '$strandInfo'.  Must be 'unstranded', 'sense' or 'antisense'")
-    unless grep( /^$line[2]$/, @VALID_STRAND_TYPES );
-
-  validationError("File in manifest does not exist: '$filename'") unless -e "$inputDir/$filename";
-
-  return @line;
-}
-
 sub validateUnstranded {
   my ($fh, $firstLine) = @_;
 
@@ -119,7 +91,7 @@ sub validateUnstranded {
     # copy data file to output dir (and clean file name)
     copyDataFile($filename);
 
-  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh));
+  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
 
   # confirm that we have the right number of files
   validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} = scalar(@$sampleNames);
@@ -226,9 +198,3 @@ sub validateTextFile {
   }
 }
 
-sub validationError {
-  my ($msg) = @_;
-
-  print STDOUT "$msg\n";
-  exit($VALIDATION_ERR_CODE);
-}
