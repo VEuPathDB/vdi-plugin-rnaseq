@@ -5,5 +5,6 @@ RUN apk add --no-cache bash; \
 
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
+COPY testdata/ /opt/veupathdb/testdata
 
 RUN chmod +x /opt/veupathdb/bin/*
