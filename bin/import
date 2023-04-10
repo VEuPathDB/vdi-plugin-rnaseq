@@ -11,13 +11,13 @@ usage() unless scalar(@ARGV) == 2;
 my ($inputDir, $outputDir) = @ARGV;
 
 validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/$MANIFEST_FILE";
-copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file\n";
+copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file '$inputDir/$MANIFEST_FILE' to '$outputDir/$MANIFEST_FILE': $!\n";
 
 open(my $fh, "$inputDir/$MANIFEST_FILE") or die "Can't open '$inputDir/$MANIFEST_FILE'\n";
 my @line = readAndValidateManifestLine($fh, $inputDir);
 
 # validation methods are driven by manifest file. included files are copied to outputDir
-$line[2] eq 'unstranded'? validateUnstranded($fh, \@line) : validateStranded($fh, \@line);
+$line[2] eq 'unstranded'? validateUnstranded($fh, \@line, $inputDir) : validateStranded($fh, \@line, $inputDir);
 
 # there should now be the same number of files in inputDir and outputDir.  If not, there were files not listed in manifest.
 opendir(my $dh, $inputDir) or die "can't open dir '$inputDir'\n";
@@ -63,7 +63,7 @@ If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT w
 }
 
 sub validateUnstranded {
-  my ($fh, $firstLine) = @_;
+  my ($fh, $firstLine, $inputDir) = @_;
 
   my $samples = {};
   my $fileNames = {};
@@ -104,7 +104,7 @@ sub validateUnstranded {
 # each sample-sense-ext is unique
 # correct counts of each extension
 sub validateStranded {
-  my ($fh, $firstLine) = @_;
+  my ($fh, $firstLine, $inputDir) = @_;
 
   my $samples = {};
   my $fileNames = {};
@@ -116,13 +116,26 @@ sub validateStranded {
   # read manifest file, and process each line
   do {
 
-    push(@$sampleNames, $sampleName);
+    unless ($sampleName =~/(.*)\-\w+$/) {
+      validationError("Sample name '$sampleName' must be of the form XXXXXX-one, XXXXXX-two, XXXXX-forward or XXXXX-reverse");
+    };
 
-    validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'sense' || $strandInfo eq 'sense';
+    $sampleName = $1;  # strip of -one or -two prefix;
+
+    push(@$sampleNames, $sampleName);
 
     # validate file name and extension
     my $extension = validateDataFileName($filename);
     $extCounts->{$extension} += 1;
+
+    if ($extension eq 'txt') {
+	validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'sense' || $strandInfo eq 'antisense';
+    } elsif  ($extension eq 'bw') {
+	validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'firststrand' || $strandInfo eq 'secondstrand';
+    } else {
+	validationError("Illegal file extension '$extension'");
+    }
+
     validationError("Sample '$sampleName' with strand '$strandInfo' and '$extension' is repeated in manifest")
       if $samples->{$sampleName}->{$strandInfo}->{$extension};
     $samples->{$sampleName}->{$strandInfo}->{$extension} = 1;
@@ -134,7 +147,7 @@ sub validateStranded {
     # copy data file to output dir (and clean file name)
     copyDataFile($filename);
 
-  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh));
+  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
 
   # confirm each sample has sense and antisense
   foreach my $sample (keys %$samples) {

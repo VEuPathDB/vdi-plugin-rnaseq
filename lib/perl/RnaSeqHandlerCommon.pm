@@ -6,9 +6,9 @@ our @ISA = 'Exporter';
 our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERR_CODE @VALID_STRAND_TYPES readAndValidateManifestLine validationError);
 
 # constants
-my $MANIFEST_FILE = 'manifest.txt';
-my $VALIDATION_ERR_CODE = 1;
-my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense');
+our $MANIFEST_FILE = 'manifest.txt';
+our $VALIDATION_ERR_CODE = 1;
+our @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
 
 sub readAndValidateManifestLine {
   my ($fh, $dataFilesDir) = @_;
@@ -28,10 +28,12 @@ sub readAndValidateManifestLine {
 
   my ($sampleName, $filename, $strandInfo) = @line;
 
-  validationError("Invalid manifest file third column value '$strandInfo'.  Must be 'unstranded', 'sense' or 'antisense'")
-    unless grep( /^$line[2]$/, @VALID_STRAND_TYPES );
+  
+  validationError("Invalid manifest file third column value '$strandInfo'.  Must be one of: " + join(', ', @VALID_STRAND_TYPES))
+      unless grep( /^$line[2]$/, @VALID_STRAND_TYPES );
+  my $path = "$dataFilesDir/$filename";
 
-  validationError("File in manifest does not exist: '$filename'") unless -e "$dataFilesDir/$filename";
+  validationError("File in manifest does not exist: '$dataFilesDir/$filename'") unless -e $path;
 
   return @line;
 }
