@@ -1,30 +1,70 @@
-#!/usr/bin/env bash
+#!/usr/bin/perl
 
-# Get the current workspace directory.
-BIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-# Get the lib directory
-LIB_DIR="$(cd -- "$(dirname -- "$BIN_DIR")" &> /dev/null && pwd)/lib"
+use strict;
+use DBI;
 
-# Include some common functionality
-. "$LIB_DIR/includes.sh"
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'JBROWSE_TRACKS_DIR');
 
-#
-# Parameter Handling
-#
+my ($userDatasetId) = @ARGV;
 
-VDI_ID="$1"
+usage() unless scalar(@ARGV) == 1;
 
-verifyVDIID "$VDI_ID" || exit $EXIT_CODE_UNEXPECTED_ERROR
+for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
 
-verifyEnv "DB_HOST" "$DB_HOST" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_PORT" "$DB_PORT" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_NAME" "$DB_NAME" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_USER" "$DB_USER" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_PASS" "$DB_PASS" || exit $EXIT_CODE_UNEXPECTED_ERROR
+##################################################
+# remove from appdb
+##################################################
 
-#
-# Script Body
-#
+my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}:database=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}", $ENV{DB_USER}, $ENV{DB_PASS})
+    || die "Couldn't connect to database: " . DBI->errstr;
+$dbh->{RaiseError} = 1;
 
->&2 env
-# TODO: Do the uninstallation!
+my $dbh = $db->getQueryHandle(0);
+
+my $deleteProtocolAppNodes = $dbh->prepare(<<EOF);
+    delete from apidbUserDatasets.UD_ProtocolAppNode
+    where profile_set_id
+          in (select profile_set_id
+              from apidbUserDatasets.ud_ProfileSet
+              where user_dataset_id = ?)
+EOF
+
+
+my $deleteNaFeatureExpression = $dbh->prepare(<<EOF);
+    DELETE from ApiDBUserDatasets.UD_NAFeatureExpression
+    WHERE protocol_app_node_id in (select protocol_app_node_id 
+                                   from apidbUserDatasets.UD_ProtocolAppNode
+                                   where profile_set_id
+                                         in (select profile_set_id
+                                             from apidbUserDatasets.ud_ProfileSet
+                                             where user_dataset_id = ?))
+EOF
+
+my $deleteProfileSet = $dbh->prepare(<<EOF);
+    DELETE from ApiDBUserDatasets.UD_ProfileSet
+    WHERE user_dataset_id = ?
+EOF
+
+$deleteNaFeatureExpression->execute($userDatasetId);
+$deleteProtocolAppNodes->execute($userDatasetId);
+$deleteProfileSet->execute($userDatasetId);
+
+$dbh->commit;
+
+sub usage {
+
+  my $envStr = join(", \$", @envVars);
+
+  die "
+Uninstall an RNA Seq user dataset from the AppDB user dataset schema, and from jbrowse track files.
+
+Usage: uninstall user_dataset_id 
+
+Where:
+  user_dataset_id:  a user dataset id
+
+Env: \$$envStr
+
+";
+}
+
