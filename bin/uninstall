@@ -3,7 +3,7 @@
 use strict;
 use DBI;
 
-my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'JBROWSE_TRACKS_DIR');
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'USER_DATASETS_DIR');
 
 my ($userDatasetId) = @ARGV;
 
@@ -12,14 +12,25 @@ usage() unless scalar(@ARGV) == 1;
 for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
 
 ##################################################
+# remove from file system
+##################################################
+my $udDirPath = "$ENV{USER_DATASETS_DIR}/$userDatasetId";
+if (-e $udDirPath) {
+  opendir(my $udDir, $udDirPath) or die "Cannot open directory '$udDirPath': $!\n";
+  foreach my $file (readdir $udDir) {
+    die "unexpected directory '$file' in user dataset directory '$udDir'\n" if -d $file;
+    unlink("$udDir/$file") || die "could not delete file '$udDir/$file\n";
+  }
+  rmdir($udDir) || die "could not delete directory '$udDir'\n";
+}
+
+##################################################
 # remove from appdb
 ##################################################
 
 my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}:database=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}", $ENV{DB_USER}, $ENV{DB_PASS})
     || die "Couldn't connect to database: " . DBI->errstr;
 $dbh->{RaiseError} = 1;
-
-my $dbh = $db->getQueryHandle(0);
 
 my $deleteProtocolAppNodes = $dbh->prepare(<<EOF);
     delete from apidbUserDatasets.UD_ProtocolAppNode
