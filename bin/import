@@ -10,6 +10,12 @@ use RnaSeqHandlerCommon;
 usage() unless scalar(@ARGV) == 2;
 my ($inputDir, $outputDir) = @ARGV;
 
+die "Output dir '$outputDir' does not exist\n" unless -d $outputDir;
+opendir(my $dh, $outputDir) or die "can't open dir '$outputDir'\n";;
+my $numOutputFiles = () = readdir($dh);
+die "Output dir '$outputDir' must be empty\n" if $numOutputFiles != 2; # . and .. are always present
+close($dh);
+
 validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/$MANIFEST_FILE";
 copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file '$inputDir/$MANIFEST_FILE' to '$outputDir/$MANIFEST_FILE': $!\n";
 
@@ -20,9 +26,10 @@ my @line = readAndValidateManifestLine($fh, $inputDir);
 $line[2] eq 'unstranded'? validateUnstranded($fh, \@line, $inputDir) : validateStranded($fh, \@line, $inputDir);
 
 # there should now be the same number of files in inputDir and outputDir.  If not, there were files not listed in manifest.
-opendir(my $dh, $inputDir) or die "can't open dir '$inputDir'\n";
+opendir($dh, $inputDir) or die "can't open dir '$inputDir'\n";
 my $numInputFiles = () = readdir($dh);
-opendir($dh, $outputDir) or die "can't open dir '$inputDir'\n";;
+close($dh);
+opendir($dh, $outputDir) or die "can't open dir '$outputDir'\n";;
 my $numOutputFiles = () = readdir($dh);
 validationError("Files and manifest do not agree.  Wrong number of files") unless $numInputFiles == $numOutputFiles;
 
@@ -74,7 +81,6 @@ sub validateUnstranded {
 
   # read manifest file, and process each line
   do {
-
     validationError("Invalid strand info in manifest column 3: '$strandInfo'") unless $strandInfo eq 'unstranded';
 
     # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
@@ -94,8 +100,8 @@ sub validateUnstranded {
   } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
 
   # confirm that we have the right number of files
-  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} = scalar(@$sampleNames);
-  validationError("Missing some .txt files") unless $extCounts->{txt} = scalar(@$sampleNames);
+  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} == scalar(@$sampleNames);
+  validationError("Missing some .txt files") unless $extCounts->{txt} == scalar(@$sampleNames);
 }
 
 # check that:
@@ -156,8 +162,8 @@ sub validateStranded {
   }
 
   # confirm that we have the right number of files
-  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} = scalar(@$sampleNames);
-  validationError("Missing some .txt files") unless $extCounts->{txt} = scalar(@$sampleNames);
+  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} == scalar(@$sampleNames);
+  validationError("Missing some .txt files") unless $extCounts->{txt} == scalar(@$sampleNames);
 }
 
 sub validateDataFileName {

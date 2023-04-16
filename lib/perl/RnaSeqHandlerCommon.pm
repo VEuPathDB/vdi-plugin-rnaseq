@@ -28,8 +28,7 @@ sub readAndValidateManifestLine {
 
   my ($sampleName, $filename, $strandInfo) = @line;
 
-  
-  validationError("Invalid manifest file third column value '$strandInfo'.  Must be one of: " + join(', ', @VALID_STRAND_TYPES))
+  validationError("Invalid manifest file third column value '$strandInfo'.  Must be one of: " . join(', ', @VALID_STRAND_TYPES))
       unless grep( /^$line[2]$/, @VALID_STRAND_TYPES );
   my $path = "$dataFilesDir/$filename";
 
