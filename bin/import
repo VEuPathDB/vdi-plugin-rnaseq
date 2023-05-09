@@ -10,7 +10,6 @@ use RnaSeqHandlerCommon;
 usage() unless scalar(@ARGV) == 2;
 my ($inputDir, $outputDir) = @ARGV;
 
-die "Output dir '$outputDir' does not exist\n" unless -d $outputDir;
 opendir(my $dh, $outputDir) or die "can't open dir '$outputDir'\n";;
 my $numOutputFiles = () = readdir($dh);
 die "Output dir '$outputDir' must be empty\n" if $numOutputFiles != 2; # . and .. are always present

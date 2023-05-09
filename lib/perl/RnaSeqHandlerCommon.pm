@@ -3,12 +3,13 @@ package RnaSeqHandlerCommon;
 use strict;
 use Exporter;
 our @ISA = 'Exporter';
-our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERR_CODE @VALID_STRAND_TYPES readAndValidateManifestLine validationError);
+our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERR_CODE readAndValidateManifestLine validationError);
 
 # constants
 our $MANIFEST_FILE = 'manifest.txt';
 our $VALIDATION_ERR_CODE = 1;
-our @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
+
+my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
 
 sub readAndValidateManifestLine {
   my ($fh, $dataFilesDir) = @_;
