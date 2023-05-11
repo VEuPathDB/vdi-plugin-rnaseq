@@ -1,0 +1,66 @@
+#!/usr/bin/perl
+
+use strict;
+use DBI;
+use FindBin;
+use lib "$FindBin::Bin/../lib/perl";
+use RnaSeqHandlerCommon;
+use File::Copy;
+
+# This script will be provided a stream, on STDIN, of newline delmited pairs of
+# dependency names and versions, with the name and version being separated by a
+# single tab character.
+
+# the expected dependency info is a single line in STDIN of the form:
+# organism_name\tversion
+
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'USER_DATASETS_DIR');
+
+my $input = <STDIN>;
+chomp $input;
+my @genomeInfo = split(/\t/, $input);
+if (scalar(@genomeInfo) != 2) {
+  print "Invalid dependency info. Expected two fields, tab delimited: '$input'\n";
+  exit 2;
+}
+if (<STDIN>) {
+  print "Invalid dependency info. Expected only a single line\n";
+  exit 2;
+}
+
+for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
+
+my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}:database=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}", $ENV{DB_USER}, $ENV{DB_PASS})
+    || die "Couldn't connect to database: " . DBI->errstr;
+$dbh->{RaiseError} = 1;
+
+my $latestBuildNumberSql = "
+SELECT MAX(build_number) as current_build
+FROM (
+  SELECT dh.build_number, annotation_version,
+    LAG(annotation_version ,1, 0) OVER (order by dh.build_number) as av_prev 
+      FROM apidbTuning.datasetPresenter dp,
+        apidbTuning.DatasetHistory dh,
+        apidb.organism o
+      WHERE dh.DATASET_PRESENTER_ID = dp.dataset_presenter_id
+        AND o.name_for_filenames = ?
+        AND dp.name = o.abbrev || '_primary_genome_RSRC'
+      )
+  WHERE annotation_version != av_prev
+";
+
+my $stmt = $dbh->prepare($latestBuildNumberSql);
+$stmt->execute($genomeInfo[0]);
+my $version = $stmt->fetchrow_array();
+if (!$version) {
+  print "Can't find version info for organism name '$genomeInfo[0]'\n";
+  exit 2;
+}
+
+exit ($version != $genomeInfo[1]);
+
+
+
+
+
+
