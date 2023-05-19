@@ -18,11 +18,10 @@ Install an RNASeq user dataset into a website.
 The dataset will include one or more .txt files (FPKM), and, optionally, parallel .bw files.  The
 former are installed into the AppDB;  the latter into web service files.
 
-Usage: install-data user_dataset_id filesDir metajsonFile
+Usage: install-data user_dataset_id filesDir
 Where:
   user_dataset_id:  a user dataset id
   filesDir:         directory containing data files.  See import script for details.
-  metajsonFile:     not used
 
 ASSUMES THE DATASET IS PRE-VALIDATED DURING IMPORT.  See the import script.
 
@@ -30,9 +29,9 @@ Env: \$$envStr
 ";
 }
 
-my ($userDatasetId, $filesDir, $metajsonFile) = @ARGV;
+my ($userDatasetId, $filesDir) = @ARGV;
 
-usage() unless scalar(@ARGV) == 3;
+usage() unless scalar(@ARGV) == 2;
 
 for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
 
