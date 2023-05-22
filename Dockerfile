@@ -14,11 +14,12 @@ COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
 COPY testdata/ /opt/veupathdb/testdata
 
-RUN export LIB_GIT_COMMIT_SHA=3900580bd250ea79ee8f9d3e4512b4591c7dff35\
+RUN export LIB_GIT_COMMIT_SHA=fe1fc269dd66801777fba0b8d86b2ab45e9bd7ac\
     && git clone https://github.com/VEuPathDB/lib-vdi-plugin-rnaseq.git \
     && cd lib-vdi-plugin-rnaseq \
     && git checkout $LIB_GIT_COMMIT_SHA \
-    && cp bin/* /opt/veupathdb/bin 
+    && cp lib/perl/BigWigUtils.pm /opt/veupathdb/lib/perl \
+    && cp bin/* /opt/veupathdb/bin
 
 RUN chmod +x /opt/veupathdb/bin/*
 

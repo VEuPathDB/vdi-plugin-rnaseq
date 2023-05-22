@@ -2,6 +2,10 @@
 
 use strict;
 use DBI;
+use FindBin;
+use lib "$FindBin::Bin/../lib/perl";
+use BigWigUtils;
+
 
 my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'USER_DATASETS_DIR');
 
@@ -14,15 +18,7 @@ for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$
 ##################################################
 # remove from file system
 ##################################################
-my $udDirPath = "$ENV{USER_DATASETS_DIR}/$userDatasetId";
-if (-e $udDirPath) {
-  opendir(my $udDir, $udDirPath) or die "Cannot open directory '$udDirPath': $!\n";
-  foreach my $file (readdir $udDir) {
-    die "unexpected directory '$file' in user dataset directory '$udDir'\n" if -d $file;
-    unlink("$udDir/$file") || die "could not delete file '$udDir/$file\n";
-  }
-  rmdir($udDir) || die "could not delete directory '$udDir'\n";
-}
+deleteUserdatasetDir("$ENV{USER_DATASETS_DIR}/$userDatasetId");
 
 ##################################################
 # remove from appdb
