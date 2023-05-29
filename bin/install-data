@@ -44,7 +44,7 @@ die "User dataset ID '$userDatasetId' already exists in webServices directory" i
 ##################################################
 # initialization for installing txt files to appdb
 ##################################################
-my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}:database=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}", $ENV{DB_USER}, $ENV{DB_PASS})
+my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
     || die "Couldn't connect to database: " . DBI->errstr;
 $dbh->{RaiseError} = 1;
 my %profileSetIds;
@@ -149,25 +149,31 @@ EOF
 sub installTxtFile {
   my ($userDatasetId, $panName, $filename, $strand) = @_;
 
+  print STDERR "installing txt file $filename\n";
   my $psId;
   if ($profileSetIds{$strand}) {
     $psId = $profileSetIds{$strand};
   }
   else {
+    print STDERR "executing query psPkSh\n";
     $psPkSh->execute();
     ($psId) = $psPkSh->fetchrow_array();
 
+    print STDERR "executing insert profile set $psId $strand\n";
     $insertProfileSet->execute($userDatasetId, $psId, $strand);
 
     $profileSetIds{$strand} = $psId;
   }
 
+  print STDERR "executing query panPkSh\n";
   $panPkSh->execute();
   my ($panId) = $panPkSh->fetchrow_array();
 
+  print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n";
   $insertProtocolAppNode->execute($panId, $psId, $panName, $orderNum);
 
   my ($idIndex, $fpkmIndex);
+  print STDERR "opening fpkm file $filename\n";
   open(DAT, $filename) or die "Cannot open file $filename for reading: $!";
 
   # check header to distinguish file type
@@ -194,8 +200,10 @@ sub installTxtFile {
     validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
   }
 
+  print STDERR "execute update profile set unit $psId $unit\n";
   $updateProfileSetUnit->execute($unit, $psId);
 
+  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n";
   while(<DAT>) {
     chomp;
 
@@ -207,19 +215,19 @@ sub installTxtFile {
     next unless($sourceId);
 
     unless(%geneIds) {
-      &makeGeneSourceIdMapping($sourceId, $dbh); # initialize all mapping of all source_ids for this organism.
+      &makeGeneSourceIdMapping($sourceId, $dbh); # use this gene's source id to find the relevant organism and initialize mapping of all its source_ids.
     }
 
     my $naFeatureId = $geneIds{$sourceId};
     unless($naFeatureId) {
-      print "WARN: Could not find an na_feature_id for source_id $sourceId";
+      print STDERR "WARN: Could not find an na_feature_id for source_id $sourceId";
       next;
     }
 
 
     $insertNaFeatureExpression->execute($panId, $naFeatureId, $fpkm);
 
-    $dbh->commit if ($count++ % 1000 == 0);    
+    $dbh->commit if ($count++ % 1000 == 0);
   }
 
   $dbh->commit;
@@ -231,6 +239,7 @@ sub makeGeneSourceIdMapping {
 
   my $sql = "select source_id, na_feature_id from apidbtuning.geneattributes where organism in (select organism from apidbtuning.geneattributes where source_id = '$sourceId')";
 
+  print STDERR "execute query to map source ids to feature ids\n";
   my $sh = $dbh->prepare($sql);
   $sh->execute();
 

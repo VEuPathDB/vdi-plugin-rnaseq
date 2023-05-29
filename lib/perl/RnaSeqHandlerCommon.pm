@@ -20,6 +20,7 @@ sub readAndValidateManifestLine {
     $line = <$fh>;
     return () unless $line;
     chomp $line;
+    print STDERR "manifest file line: '$line'\n";
   } while (!$line);
 
   my @line = split(/\t/, $line);
@@ -32,6 +33,8 @@ sub readAndValidateManifestLine {
   validationError("Invalid manifest file third column value '$strandInfo'.  Must be one of: " . join(', ', @VALID_STRAND_TYPES))
       unless grep( /^$line[2]$/, @VALID_STRAND_TYPES );
   my $path = "$dataFilesDir/$filename";
+
+  print STDERR "sample: $sampleName filepath: $path strand: $strandInfo\n";
 
   validationError("File in manifest does not exist: '$dataFilesDir/$filename'") unless -e $path;
 
