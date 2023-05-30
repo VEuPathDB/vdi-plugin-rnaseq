@@ -47,6 +47,7 @@ die "User dataset ID '$userDatasetId' already exists in webServices directory" i
 my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
     || die "Couldn't connect to database: " . DBI->errstr;
 $dbh->{RaiseError} = 1;
+$dbh->{AutoCommit} = 0;
 my %profileSetIds;
 my $orderNum = 1;
 my $count = 0;
@@ -57,15 +58,15 @@ my ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocol
 # iterate through lines of manifest file, processing each file (either txt or bw)
 #################################################################################
 
-open my $fh, $MANIFEST_FILE or die "Can't open manifest file '$MANIFEST_FILE' for reading:  $!";
+open my $fh, "$filesDir/$MANIFEST_FILE" or die "Can't open manifest file '$filesDir/$MANIFEST_FILE' for reading:  $!";
 
 # manifest file columns:
 #    sampleName fileName strandInfo ('unstranded', 'sense' or 'antisense')
 while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $filesDir)) {
   if ($filename =~ /(.+)\.txt$/) {
-    installTxtFile($userDatasetId, $panName, $filename, $strand);
+    installTxtFile($userDatasetId, $panName, "$filesDir/$filename", $strand);
   } else {
-    installBwFile($userDatasetId, $filename);
+    installBwFile($userDatasetId, "$filesDir/$filename");
   }
 }
 

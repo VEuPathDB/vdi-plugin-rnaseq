@@ -27,6 +27,7 @@ deleteUserDatasetDir("$ENV{USER_DATASETS_DIR}/$userDatasetId");
 my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
     || die "Couldn't connect to database: " . DBI->errstr;
 $dbh->{RaiseError} = 1;
+$dbh->{AutoCommit} = 0;
 
 my $deleteProtocolAppNodes = $dbh->prepare(<<EOF);
     delete from apidbUserDatasets.UD_ProtocolAppNode
