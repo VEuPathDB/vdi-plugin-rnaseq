@@ -1,1 +1,218 @@
-# not implemented yet
+#!/usr/bin/perl
+
+use strict;
+use Data::Dumper;
+use File::Copy;
+use FindBin;
+use lib "$FindBin::Bin/../lib/perl";
+use RnaSeqHandlerCommon;
+
+usage() unless scalar(@ARGV) == 2;
+my ($inputDir, $outputDir) = @ARGV;
+
+opendir(my $dh, $outputDir) or die "can't open dir '$outputDir'\n";;
+my $numOutputFiles = () = readdir($dh);
+die "Output dir '$outputDir' must be empty\n" if $numOutputFiles != 2; # . and .. are always present
+close($dh);
+
+validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/$MANIFEST_FILE";
+copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file '$inputDir/$MANIFEST_FILE' to '$outputDir/$MANIFEST_FILE': $!\n";
+
+open(my $fh, "$inputDir/$MANIFEST_FILE") or die "Can't open '$inputDir/$MANIFEST_FILE'\n";
+my @line = readAndValidateManifestLine($fh, $inputDir);
+
+# validation methods are driven by manifest file. included files are copied to outputDir
+$line[2] eq 'unstranded'? validateUnstranded($fh, \@line, $inputDir) : validateStranded($fh, \@line, $inputDir);
+
+# there should now be the same number of files in inputDir and outputDir.  If not, there were files not listed in manifest.
+opendir($dh, $inputDir) or die "can't open dir '$inputDir'\n";
+my $numInputFiles = () = readdir($dh);
+close($dh);
+opendir($dh, $outputDir) or die "can't open dir '$outputDir'\n";;
+my $numOutputFiles = () = readdir($dh);
+validationError("Files and manifest do not agree.  Wrong number of files") unless $numInputFiles == $numOutputFiles;
+
+############################################################################################################
+
+sub usage {
+  die "
+Usage: import input_dir output_dir
+
+Prepare and validate an Rna Seq dataset for import.
+
+input_dir: must contain the original dataset files, and no other files.
+output_dir: will contain the import-ready set of files.  In this case, the same as input.
+
+All samples must include .txt files.  Either all samples or no samples must include .bw files (no in between).
+
+input_dir will contain:
+  $MANIFEST_FILE file with one line per file:
+    for txt file:
+      samplename filename strandinfo ('unstranded', 'sense' or 'antisense')
+    for bw file:
+      samplename filename strandinfo ('unstranded', 'strandone' or 'strandtwo')
+
+  there will be one or more samples
+
+  sample files have cannonical names:
+     unstranded: 
+       -FILE_NAME.bw
+       -FILE_NAME.txt
+     stranded:
+       -FILE_NAME.forward.bw
+       -FILE_NAME.reverse.bw
+       -FILE_NAME.one.txt
+       -FILE_NAME.two.txt
+
+If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
+";
+}
+
+sub validateUnstranded {
+  my ($fh, $firstLine, $inputDir) = @_;
+
+  my $samples = {};
+  my $fileNames = {};
+  my $extCounts = {};
+  my $sampleNames = [];
+
+  my ($sampleName, $filename, $strandInfo) = @$firstLine;
+
+  # read manifest file, and process each line
+  do {
+    validationError("Invalid strand info in manifest column 3: '$strandInfo'") unless $strandInfo eq 'unstranded';
+
+    # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
+    my $extension = validateDataFileName($filename);
+    $extCounts->{$extension} += 1;
+    validationError("Sample '$sampleName' with '$extension' repeated in manifest") if $samples->{$sampleName}->{$extension};
+    $samples->{$sampleName}->{$extension} = 1;
+
+    # ensure file uniqueness
+    push(@$sampleNames, $sampleName);
+    validationError("Repeated file name '$filename'") if $fileNames->{$filename};
+    $fileNames->{$filename} = 1;
+
+    # copy data file to output dir (and clean file name)
+    copyDataFile($filename);
+
+  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
+
+  # confirm that we have the right number of files
+  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} == scalar(@$sampleNames);
+  validationError("Missing some .txt files") unless $extCounts->{txt} == scalar(@$sampleNames);
+}
+
+# check that:
+# each file name is unique
+# each sample has sense and antisense
+# each sample-sense-ext is unique
+# correct counts of each extension
+sub validateStranded {
+  my ($fh, $firstLine, $inputDir) = @_;
+
+  my $samples = {};
+  my $fileNames = {};
+  my $extCounts = ();
+  my $sampleNames = [];
+
+  my ($sampleName, $filename, $strandInfo) = @$firstLine;
+
+  # read manifest file, and process each line
+  do {
+
+    unless ($sampleName =~/(.*)\-\w+$/) {
+      validationError("Sample name '$sampleName' must be of the form XXXXXX-one, XXXXXX-two, XXXXX-forward or XXXXX-reverse");
+    };
+
+    $sampleName = $1;  # strip of -one or -two prefix;
+
+    push(@$sampleNames, $sampleName);
+
+    # validate file name and extension
+    my $extension = validateDataFileName($filename);
+    $extCounts->{$extension} += 1;
+
+    if ($extension eq 'txt') {
+	validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'sense' || $strandInfo eq 'antisense';
+    } elsif  ($extension eq 'bw') {
+	validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'firststrand' || $strandInfo eq 'secondstrand';
+    } else {
+	validationError("Illegal file extension '$extension'");
+    }
+
+    validationError("Sample '$sampleName' with strand '$strandInfo' and '$extension' is repeated in manifest")
+      if $samples->{$sampleName}->{$strandInfo}->{$extension};
+    $samples->{$sampleName}->{$strandInfo}->{$extension} = 1;
+
+    # ensure file uniqueness
+    validationError("Repeated file name '$filename'") if $fileNames->{$filename};
+    $fileNames->{$filename} = 1;
+
+    # copy data file to output dir (and clean file name)
+    copyDataFile($filename);
+
+  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
+
+  # confirm each sample has sense and antisense
+  foreach my $sample (keys %$samples) {
+    validationError("Sample '$sample' missing antisense") unless $samples->{$sample}->{antisense};
+    validationError("Sample '$sample' missing sense") unless $samples->{$sample}->{sense};
+  }
+
+  # confirm that we have the right number of files
+  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} == scalar(@$sampleNames);
+  validationError("Missing some .txt files") unless $extCounts->{txt} == scalar(@$sampleNames);
+}
+
+sub validateDataFileName {
+  my ($filename) = @_;
+
+  # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
+  $filename =~ /.*\.(bw|txt)$/ or validationError("Invalid file name '$filename'.  Must have .bw or .txt extension");
+  my $extension = $1;
+  validateTextFile("$inputDir/$filename") if ($extension eq 'txt');
+  return $extension;
+}
+
+# copy file from inputDir to outputDir (and clean file name)
+sub copyDataFile {
+  my ($dataFile) = @_;
+  my $out = $dataFile;
+  my $out =~ s/[^\.-\w]/_/g;  # replace icky chars with underscore
+  copy("$inputDir/$dataFile", "$outputDir/$out");
+}
+
+sub validateTextFile {
+  my ($filename) = @_;
+
+  open(DATA, $filename) or die "Cannot open file '$filename' for reading: $!\n";
+
+  # check header to distinguish file type
+  my $columnCount;
+  my $header = <DATA>;
+  chomp($header);
+
+  if ($header eq "tracking_id\tclass_code\tnearest_ref_id\tgene_id\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status") {
+    # Cufflinks FPKM file
+    $columnCount = 13;
+  } elsif ($header eq "gene_id\tFPKM") {
+    # FPKMtool file
+    $columnCount = 2;
+  } elsif ($header eq "gene_id\tTPM") {
+    # TPMtool file
+    $columnCount = 2;
+  } else {
+    validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
+  }
+
+  my $linenum = 1;
+  while (<DATA>) {
+    $linenum++;
+    chomp;
+    my @a = split(/\t/);
+    validationError("Invalid row in file '$filename' line $linenum.  Wrong number of fields.  Expected $columnCount.")
+      unless scalar(@a) == $columnCount;
+  }
+}
+

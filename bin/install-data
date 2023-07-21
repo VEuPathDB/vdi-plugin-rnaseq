@@ -1,32 +1,260 @@
-#!/usr/bin/env bash
+#!/usr/bin/perl
 
-# Get the current workspace directory.
-BIN_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-# Get the lib directory
-LIB_DIR="$(cd -- "$(dirname -- "$BIN_DIR")" &> /dev/null && pwd)/lib"
+use strict;
+use DBI;
+use FindBin;
+use lib "$FindBin::Bin/../lib/perl";
+use RnaSeqHandlerCommon;
+use BigWigUtils;
+use File::Copy;
 
-# Include some common functionality
-. "$LIB_DIR/includes.sh"
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'USER_DATASETS_DIR');
 
-#
-# Input Handling
-#
+sub usage {
+  my $envStr = join(", \$", @envVars);
 
-VDI_ID=$1
-INPUT_DIR=$2
+  die "
+Install an RNASeq user dataset into a website.
 
-verifyVDIID "$VDI_ID" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyDir "$INPUT_DIR" || exit $EXIT_CODE_UNEXPECTED_ERROR
+The dataset will include one or more .txt files (FPKM), and, optionally, parallel .bw files.  The
+former are installed into the AppDB;  the latter into web service files.
 
-verifyEnv "DB_HOST" "$DB_HOST" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_PORT" "$DB_PORT" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_NAME" "$DB_NAME" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_USER" "$DB_USER" || exit $EXIT_CODE_UNEXPECTED_ERROR
-verifyEnv "DB_PASS" "$DB_PASS" || exit $EXIT_CODE_UNEXPECTED_ERROR
+Usage: install-data user_dataset_id filesDir
+Where:
+  user_dataset_id:  a user dataset id
+  filesDir:         directory containing data files.  See import script for details.
 
-#
-# Script Body
-#
+ASSUMES THE DATASET IS PRE-VALIDATED DURING IMPORT.  See the import script.
 
->&2 env
-# TODO: Call some commands and do the things needed to install a dataset.
+Env: \$$envStr
+";
+}
+
+my ($userDatasetId, $filesDir) = @ARGV;
+
+usage() unless scalar(@ARGV) == 2;
+
+for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
+
+####################################################
+# initialization for installing bw files to file sys
+####################################################
+die "User dataset ID '$userDatasetId' already exists in webServices directory" if -e "$ENV{USER_DATASETS_DIR}/$userDatasetId";
+
+##################################################
+# initialization for installing txt files to appdb
+##################################################
+my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
+    || die "Couldn't connect to database: " . DBI->errstr;
+$dbh->{RaiseError} = 1;
+$dbh->{AutoCommit} = 0;
+my %profileSetIds;
+my $orderNum = 1;
+my $count = 0;
+my %geneIds;
+my ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocolAppNode, $insertNaFeatureExpression, $unswitchProfiles)  = initializePreparedStmts();
+
+#################################################################################
+# iterate through lines of manifest file, processing each file (either txt or bw)
+#################################################################################
+
+open my $fh, "$filesDir/$MANIFEST_FILE" or die "Can't open manifest file '$filesDir/$MANIFEST_FILE' for reading:  $!";
+
+# manifest file columns:
+#    sampleName fileName strandInfo ('unstranded', 'sense' or 'antisense')
+while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $filesDir)) {
+  if ($filename =~ /(.+)\.txt$/) {
+    installTxtFile($userDatasetId, $panName, "$filesDir/$filename", $strand);
+  } else {
+    installBwFile($userDatasetId, "$filesDir/$filename");
+  }
+}
+
+######################################
+# do final processing for appdb
+######################################
+$unswitchProfiles->execute($userDatasetId);
+$dbh->commit;
+
+
+
+################################ subroutines   ##################################################################
+
+sub initializePreparedStmts {
+
+  my $panPkSql = "select ApiDBUserDatasets.UD_ProtocolAppNode_sq.nextval from dual";
+  my $panPkSh = $dbh->prepare($panPkSql);
+
+  my $psPkSql = "select ApiDBUserDatasets.UD_ProfileSet_sq.nextval from dual";
+  my $psPkSh = $dbh->prepare($psPkSql);
+
+  my $insertProfileSet = $dbh->prepare(<<EOF);
+    INSERT INTO apidbUserDatasets.UD_ProfileSet
+    (user_dataset_id, profile_set_id, name)
+    VALUES (?,?,?)
+EOF
+
+  my $updateProfileSetUnit = $dbh->prepare(<<EOF);
+    UPDATE apidbUserDatasets.UD_ProfileSet
+    SET unit = ?
+    WHERE profile_set_id = ?
+EOF
+
+  my $insertProtocolAppNode = $dbh->prepare(<<EOF);
+    INSERT INTO apidbUserDatasets.UD_ProtocolAppNode
+    (protocol_app_node_id, profile_set_id, name, node_order_num)
+    VALUES (?,?,?,?)
+EOF
+
+  my $insertNaFeatureExpression = $dbh->prepare(<<EOF);
+    INSERT INTO apidbUserDatasets.UD_NaFeatureExpression
+    (na_feat_expression_id, protocol_app_node_id, na_feature_id, value)
+    VALUES (ApiDBUserDatasets.UD_NaFeatureExpression_sq.nextval,?,?,?)
+EOF
+
+  # query to switch the sense of stranded data if sense.median < antisense.median
+  my $unswitchProfiles = $dbh->prepare(<<EOF);
+update apidbUserDatasets.ud_ProfileSet
+set name = case name
+             when 'sense' then 'antisense'
+             when 'antisense' then 'sense'
+             else name
+           end
+where user_dataset_id = ?
+  and user_dataset_id
+      in (select sense.user_dataset_id
+          from (select ps.user_dataset_id, median(nfe.value) as median
+                from apidbUserDatasets.ud_NAFeatureExpression nfe,
+                     apidbUserDatasets.ud_ProfileSet ps,
+                     apidbUserDatasets.ud_ProtocolAppNode pan
+                where ps.name = 'sense'
+                  and ps.profile_set_id = pan.profile_set_id
+                  and pan.protocol_app_node_id = nfe.protocol_app_node_id
+                group by ps.user_dataset_id, ps.name) sense,
+               (select ps.user_dataset_id, median(nfe.value) as median
+                from apidbUserDatasets.ud_NAFeatureExpression nfe,
+                     apidbUserDatasets.ud_ProfileSet ps,
+                     apidbUserDatasets.ud_ProtocolAppNode pan
+                where ps.name = 'antisense'
+                  and ps.profile_set_id = pan.profile_set_id
+                  and pan.protocol_app_node_id = nfe.protocol_app_node_id
+                group by ps.user_dataset_id, ps.name) antisense
+          where sense.user_dataset_id = antisense.user_dataset_id
+            and sense.median < antisense.median)
+EOF
+
+    return ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocolAppNode, $insertNaFeatureExpression, $unswitchProfiles);
+
+}
+
+sub installTxtFile {
+  my ($userDatasetId, $panName, $filename, $strand) = @_;
+
+  print STDERR "installing txt file $filename\n";
+  my $psId;
+  if ($profileSetIds{$strand}) {
+    $psId = $profileSetIds{$strand};
+  }
+  else {
+    print STDERR "executing query psPkSh\n";
+    $psPkSh->execute();
+    ($psId) = $psPkSh->fetchrow_array();
+
+    print STDERR "executing insert profile set $psId $strand\n";
+    $insertProfileSet->execute($userDatasetId, $psId, $strand);
+
+    $profileSetIds{$strand} = $psId;
+  }
+
+  print STDERR "executing query panPkSh\n";
+  $panPkSh->execute();
+  my ($panId) = $panPkSh->fetchrow_array();
+
+  print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n";
+  $insertProtocolAppNode->execute($panId, $psId, $panName, $orderNum);
+
+  my ($idIndex, $fpkmIndex);
+  print STDERR "opening fpkm file $filename\n";
+  open(DAT, $filename) or die "Cannot open file $filename for reading: $!";
+
+  # check header to distinguish file type
+  my $unit;
+  my $header = <DAT>;
+  chomp($header);
+
+  if ($header eq "tracking_id\tclass_code\tnearest_ref_id\tgene_id\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status") {
+    # Cufflinks FPKM file
+    $idIndex = 0;
+    $fpkmIndex = 9;
+    $unit = "FPKM";
+  } elsif ($header eq "gene_id\tFPKM") {
+    # FPKMtool file
+    $idIndex = 0;
+    $fpkmIndex = 1;
+    $unit = "FPKM";
+  } elsif ($header eq "gene_id\tTPM") {
+    # TPMtool file
+    $idIndex = 0;
+    $fpkmIndex = 1;
+    $unit = "TPM";
+  } else {
+    validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
+  }
+
+  print STDERR "execute update profile set unit $psId $unit\n";
+  $updateProfileSetUnit->execute($unit, $psId);
+
+  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n";
+  while(<DAT>) {
+    chomp;
+
+    my @a = split(/\t/, $_);
+
+    my $sourceId = $a[$idIndex];
+    my $fpkm = $a[$fpkmIndex];
+
+    next unless($sourceId);
+
+    unless(%geneIds) {
+      &makeGeneSourceIdMapping($sourceId, $dbh); # use this gene's source id to find the relevant organism and initialize mapping of all its source_ids.
+    }
+
+    my $naFeatureId = $geneIds{$sourceId};
+    unless($naFeatureId) {
+      print STDERR "WARN: Could not find an na_feature_id for source_id $sourceId";
+      next;
+    }
+
+
+    $insertNaFeatureExpression->execute($panId, $naFeatureId, $fpkm);
+
+    $dbh->commit if ($count++ % 1000 == 0);
+  }
+
+  $dbh->commit;
+  $orderNum++;
+}
+
+sub makeGeneSourceIdMapping {
+  my ($sourceId, $dbh) = @_;
+
+  my $sql = "select source_id, na_feature_id from apidbtuning.geneattributes where organism in (select organism from apidbtuning.geneattributes where source_id = '$sourceId')";
+
+  print STDERR "execute query to map source ids to feature ids\n";
+  my $sh = $dbh->prepare($sql);
+  $sh->execute();
+
+  while(my ($sourceId, $naFeatureId) = $sh->fetchrow_array()) {
+    $geneIds{$sourceId} = $naFeatureId;
+  }
+  $sh->finish();
+}
+
+sub validationError {
+  my ($msg) = @_;
+
+  print STDOUT "$msg\n";
+  exit($VALIDATION_ERR_CODE);
+}
+
+
