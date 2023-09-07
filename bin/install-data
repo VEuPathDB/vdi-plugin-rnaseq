@@ -8,7 +8,7 @@ use RnaSeqHandlerCommon;
 use BigWigUtils;
 use File::Copy;
 
-my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'USER_DATASETS_DIR');
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DATA_FILES');
 
 sub usage {
   my $envStr = join(", \$", @envVars);
@@ -36,10 +36,12 @@ usage() unless scalar(@ARGV) == 2;
 
 for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
 
+my $dbSchema = $ENV{DB_SCHEMA};
+
 ####################################################
 # initialization for installing bw files to file sys
 ####################################################
-die "User dataset ID '$userDatasetId' already exists in webServices directory" if -e "$ENV{USER_DATASETS_DIR}/$userDatasetId";
+die "User dataset ID '$userDatasetId' already exists in webServices directory" if -e "$ENV{DATA_FILES}/$userDatasetId";
 
 ##################################################
 # initialization for installing txt files to appdb
@@ -82,39 +84,39 @@ $dbh->commit;
 
 sub initializePreparedStmts {
 
-  my $panPkSql = "select ApiDBUserDatasets.UD_ProtocolAppNode_sq.nextval from dual";
+  my $panPkSql = "select $dbSchema.UD_ProtocolAppNode_sq.nextval from dual";
   my $panPkSh = $dbh->prepare($panPkSql);
 
-  my $psPkSql = "select ApiDBUserDatasets.UD_ProfileSet_sq.nextval from dual";
+  my $psPkSql = "select $dbSchema.UD_ProfileSet_sq.nextval from dual";
   my $psPkSh = $dbh->prepare($psPkSql);
 
   my $insertProfileSet = $dbh->prepare(<<EOF);
-    INSERT INTO apidbUserDatasets.UD_ProfileSet
+    INSERT INTO $dbSchema.UD_ProfileSet
     (user_dataset_id, profile_set_id, name)
     VALUES (?,?,?)
 EOF
 
   my $updateProfileSetUnit = $dbh->prepare(<<EOF);
-    UPDATE apidbUserDatasets.UD_ProfileSet
+    UPDATE $dbSchema.UD_ProfileSet
     SET unit = ?
     WHERE profile_set_id = ?
 EOF
 
   my $insertProtocolAppNode = $dbh->prepare(<<EOF);
-    INSERT INTO apidbUserDatasets.UD_ProtocolAppNode
+    INSERT INTO $dbSchema.UD_ProtocolAppNode
     (protocol_app_node_id, profile_set_id, name, node_order_num)
     VALUES (?,?,?,?)
 EOF
 
   my $insertNaFeatureExpression = $dbh->prepare(<<EOF);
-    INSERT INTO apidbUserDatasets.UD_NaFeatureExpression
+    INSERT INTO $dbSchema.UD_NaFeatureExpression
     (na_feat_expression_id, protocol_app_node_id, na_feature_id, value)
-    VALUES (ApiDBUserDatasets.UD_NaFeatureExpression_sq.nextval,?,?,?)
+    VALUES ($dbSchema.UD_NaFeatureExpression_sq.nextval,?,?,?)
 EOF
 
   # query to switch the sense of stranded data if sense.median < antisense.median
   my $unswitchProfiles = $dbh->prepare(<<EOF);
-update apidbUserDatasets.ud_ProfileSet
+update $dbSchema.ud_ProfileSet
 set name = case name
              when 'sense' then 'antisense'
              when 'antisense' then 'sense'
@@ -124,17 +126,17 @@ where user_dataset_id = ?
   and user_dataset_id
       in (select sense.user_dataset_id
           from (select ps.user_dataset_id, median(nfe.value) as median
-                from apidbUserDatasets.ud_NAFeatureExpression nfe,
-                     apidbUserDatasets.ud_ProfileSet ps,
-                     apidbUserDatasets.ud_ProtocolAppNode pan
+                from $dbSchema.ud_NAFeatureExpression nfe,
+                     $dbSchema.ud_ProfileSet ps,
+                     $dbSchema.ud_ProtocolAppNode pan
                 where ps.name = 'sense'
                   and ps.profile_set_id = pan.profile_set_id
                   and pan.protocol_app_node_id = nfe.protocol_app_node_id
                 group by ps.user_dataset_id, ps.name) sense,
                (select ps.user_dataset_id, median(nfe.value) as median
-                from apidbUserDatasets.ud_NAFeatureExpression nfe,
-                     apidbUserDatasets.ud_ProfileSet ps,
-                     apidbUserDatasets.ud_ProtocolAppNode pan
+                from $dbSchema.ud_NAFeatureExpression nfe,
+                     $dbSchema.ud_ProfileSet ps,
+                     $dbSchema.ud_ProtocolAppNode pan
                 where ps.name = 'antisense'
                   and ps.profile_set_id = pan.profile_set_id
                   and pan.protocol_app_node_id = nfe.protocol_app_node_id
