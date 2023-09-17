@@ -41,7 +41,7 @@ my $dbSchema = $ENV{DB_SCHEMA};
 ####################################################
 # initialization for installing bw files to file sys
 ####################################################
-die "User dataset ID '$userDatasetId' already exists in webServices directory" if -e "$ENV{DATA_FILES}/$userDatasetId";
+die "Invalid DATA_FILES dir\n" unless -d $ENV{DATA_FILES};
 
 ##################################################
 # initialization for installing txt files to appdb
@@ -68,7 +68,7 @@ while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $file
   if ($filename =~ /(.+)\.txt$/) {
     installTxtFile($userDatasetId, $panName, "$filesDir/$filename", $strand);
   } else {
-    installBwFile($userDatasetId, "$filesDir/$filename");
+    installBwFile("$filesDir/$filename", $ENV{DATA_FILES});
   }
 }
 
