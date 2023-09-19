@@ -43,26 +43,22 @@ Prepare and validate an Rna Seq dataset for import.
 input_dir: must contain the original dataset files, and no other files.
 output_dir: will contain the import-ready set of files.  In this case, the same as input.
 
-All samples must include .txt files.  Either all samples or no samples must include .bw files (no in between).
-
 input_dir will contain:
   $MANIFEST_FILE file with one line per file:
     for txt file:
-      samplename filename strandinfo ('unstranded', 'sense' or 'antisense')
+      SAMPLENAME FILENAME STRANDINFO ('unstranded', 'sense' or 'antisense')
     for bw file:
-      samplename filename strandinfo ('unstranded', 'strandone' or 'strandtwo')
+      SAMPLENAME FILENAME STRANDINFO ('unstranded', 'strandone' or 'strandtwo')
 
   there will be one or more samples
 
-  sample files have cannonical names:
-     unstranded: 
-       -FILE_NAME.bw
-       -FILE_NAME.txt
-     stranded:
-       -FILE_NAME.forward.bw
-       -FILE_NAME.reverse.bw
-       -FILE_NAME.one.txt
-       -FILE_NAME.two.txt
+  FILENAME validation rules:
+    unstranded:
+      - only files with .bw or .txt extension are allowed
+      - a given SAMPLENAME can have zero or one of each of those extensions
+    stranded:
+      - only files with .forward.bw, .reverse.bw, .one.txt and .two.txt are allowed
+      - a given SAMPLENAME can have zero or one of each of those extensions
 
 If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
 ";
@@ -73,7 +69,6 @@ sub validateUnstranded {
 
   my $samples = {};
   my $fileNames = {};
-  my $extCounts = {};
   my $sampleNames = [];
 
   my ($sampleName, $filename, $strandInfo) = @$firstLine;
@@ -84,12 +79,10 @@ sub validateUnstranded {
 
     # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
     my $extension = validateDataFileName($filename);
-    $extCounts->{$extension} += 1;
     validationError("Sample '$sampleName' with '$extension' repeated in manifest") if $samples->{$sampleName}->{$extension};
     $samples->{$sampleName}->{$extension} = 1;
 
     # ensure file uniqueness
-    push(@$sampleNames, $sampleName);
     validationError("Repeated file name '$filename'") if $fileNames->{$filename};
     $fileNames->{$filename} = 1;
 
@@ -97,10 +90,6 @@ sub validateUnstranded {
     copyDataFile($filename);
 
   } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
-
-  # confirm that we have the right number of files
-  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} == scalar(@$sampleNames);
-  validationError("Missing some .txt files") unless $extCounts->{txt} == scalar(@$sampleNames);
 }
 
 # check that:
@@ -159,10 +148,6 @@ sub validateStranded {
     validationError("Sample '$sample' missing antisense") unless $samples->{$sample}->{antisense};
     validationError("Sample '$sample' missing sense") unless $samples->{$sample}->{sense};
   }
-
-  # confirm that we have the right number of files
-  validationError("Missing some .bw files") unless $extCounts->{bw} == 0 or $extCounts->{bw} == scalar(@$sampleNames);
-  validationError("Missing some .txt files") unless $extCounts->{txt} == scalar(@$sampleNames);
 }
 
 sub validateDataFileName {

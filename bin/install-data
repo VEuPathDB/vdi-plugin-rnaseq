@@ -41,7 +41,9 @@ my $dbSchema = $ENV{DB_SCHEMA};
 ####################################################
 # initialization for installing bw files to file sys
 ####################################################
-die "Invalid DATA_FILES dir\n" unless -d $ENV{DATA_FILES};
+my $datasetDir = $ENV{DATA_FILES};
+die "Dataset target dir $datasetDir already exists\n" if -e $datasetDir;
+mkdir($datasetDir) || die "Failed creating dataset target dir $datasetDir\n";
 
 ##################################################
 # initialization for installing txt files to appdb
@@ -68,7 +70,7 @@ while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $file
   if ($filename =~ /(.+)\.txt$/) {
     installTxtFile($userDatasetId, $panName, "$filesDir/$filename", $strand);
   } else {
-    installBwFile("$filesDir/$filename", $ENV{DATA_FILES});
+    installBwFile("$filesDir/$filename", $datasetDir);
   }
 }
 
