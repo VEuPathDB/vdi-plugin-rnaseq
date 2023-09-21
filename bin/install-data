@@ -43,7 +43,7 @@ my $dbSchema = $ENV{DB_SCHEMA};
 ####################################################
 my $datasetDir = $ENV{DATA_FILES};
 die "Dataset target dir $datasetDir already exists\n" if -e $datasetDir;
-mkdir($datasetDir) || die "Failed creating dataset target dir $datasetDir\n";
+mkdir($datasetDir, 0777) || die "Failed creating dataset target dir $datasetDir\n";
 
 ##################################################
 # initialization for installing txt files to appdb
