@@ -2,9 +2,11 @@
 
 use strict;
 use DBI;
+use DBI qw(:sql_types);
 use FindBin;
 use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
+use DbiBatchExecutor;
 use BigWigUtils;
 use File::Copy;
 
@@ -210,6 +212,13 @@ sub installTxtFile {
   $updateProfileSetUnit->execute($unit, $psId);
 
   print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n";
+
+  my @panIdArray;
+  my @naFeatureIdArray;
+  my @fpkmArray;
+  my $batchExecutor = new DbiBatchExecutor(100, 1000);
+
+#  $insertNaFeatureExpression->bind_param(1, 1.0, { TYPE => SQL_DOUBLE });
   while(<DAT>) {
     chomp;
 
@@ -229,14 +238,14 @@ sub installTxtFile {
       print STDERR "WARN: Could not find an na_feature_id for source_id $sourceId";
       next;
     }
+    push(@panIdArray, $panId);
+    push(@naFeatureIdArray, $naFeatureId);
+    push(@fpkmArray, $fpkm);
+    $batchExecutor->periodicallyExecuteBatch($dbh, $insertNaFeatureExpression, 0, [SQL_INTEGER, SQL_INTEGER, SQL_DOUBLE], \@panIdArray, \@naFeatureIdArray, \@fpkmArray);
 
-
-    $insertNaFeatureExpression->execute($panId, $naFeatureId, $fpkm);
-
-    $dbh->commit if ($count++ % 1000 == 0);
   }
+  $batchExecutor->periodicallyExecuteBatch($dbh, $insertNaFeatureExpression, 1, [SQL_INTEGER, SQL_INTEGER, SQL_DOUBLE], \@panIdArray, \@naFeatureIdArray, \@fpkmArray);
 
-  $dbh->commit;
   $orderNum++;
 }
 
