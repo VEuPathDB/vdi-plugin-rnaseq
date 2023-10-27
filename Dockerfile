@@ -1,11 +1,12 @@
 FROM veupathdb/vdi-plugin-base:2.0.0
 
-RUN apt-get update && apt-get install -y \
-    python3-pip
+RUN apt-get update \
+    && apt-get install -y python3-pip \
+    && apt-get clean
 
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir numpy && \
-    pip3 install --no-cache-dir pyBigWig
+RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip && \
+    pip3 install --no-cache-dir --break-system-packages numpy && \
+    pip3 install --no-cache-dir --break-system-packages pyBigWig
 
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
