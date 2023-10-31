@@ -19,12 +19,11 @@ validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/
 copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file '$inputDir/$MANIFEST_FILE' to '$outputDir/$MANIFEST_FILE': $!\n";
 
 open(my $fh, "$inputDir/$MANIFEST_FILE") or die "Can't open '$inputDir/$MANIFEST_FILE'\n";
-my @line = readAndValidateManifestLine($fh, $inputDir);
+my @lines = readAndValidateManifestLine($fh, $inputDir);
 
-# validation methods are driven by manifest file. included files are copied to outputDir
-$line[2] eq 'unstranded'? validateUnstranded($fh, \@line, $inputDir) : validateStranded($fh, \@line, $inputDir);
+validateAndCopyFiles($fh, \@lines, $inputDir);
 
-# there should now be the same number of files in inputDir and outputDir.  If not, there were files not listed in manifest.
+# there should now be the same number of files in inputDir and outputDir.  If not, there were input files not listed in manifest.
 opendir($dh, $inputDir) or die "can't open dir '$inputDir'\n";
 my $numInputFiles = () = readdir($dh);
 close($dh);
@@ -45,26 +44,19 @@ output_dir: will contain the import-ready set of files.  In this case, the same 
 
 input_dir will contain:
   $MANIFEST_FILE file with one line per file:
-    for txt file:
-      SAMPLENAME FILENAME STRANDINFO ('unstranded', 'sense' or 'antisense')
-    for bw file:
-      SAMPLENAME FILENAME STRANDINFO ('unstranded', 'strandone' or 'strandtwo')
+      SAMPLENAME FILENAME STRAND
 
-  there will be one or more samples
+  there will be one or more samples.  STRAND must be 'unstranded'.  (No longer support 'stranded')
 
   FILENAME validation rules:
-    unstranded:
       - only files with .bw or .txt extension are allowed
-      - a given SAMPLENAME can have zero or one of each of those extensions
-    stranded:
-      - only files with .forward.bw, .reverse.bw, .one.txt and .two.txt are allowed
       - a given SAMPLENAME can have zero or one of each of those extensions
 
 If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
 ";
 }
 
-sub validateUnstranded {
+sub validateAndCopyFiles {
   my ($fh, $firstLine, $inputDir) = @_;
 
   my $samples = {};
@@ -75,7 +67,7 @@ sub validateUnstranded {
 
   # read manifest file, and process each line
   do {
-    validationError("Invalid strand info in manifest column 3: '$strandInfo'") unless $strandInfo eq 'unstranded';
+    validationError("Unsupported strand info in manifest column 3: '$strandInfo'") unless $strandInfo eq 'unstranded';
 
     # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
     my $extension = validateDataFileName($filename);
@@ -89,67 +81,8 @@ sub validateUnstranded {
     # copy data file to output dir (and clean file name)
     copyDataFile($filename);
 
-  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
+  } while(($sampleName, $filename) = readAndValidateManifestLine($fh, $inputDir));
 }
-
-# check that:
-# each file name is unique
-# each sample has sense and antisense
-# each sample-sense-ext is unique
-# correct counts of each extension
-sub validateStranded {
-  my ($fh, $firstLine, $inputDir) = @_;
-
-  my $samples = {};
-  my $fileNames = {};
-  my $extCounts = ();
-  my $sampleNames = [];
-
-  my ($sampleName, $filename, $strandInfo) = @$firstLine;
-
-  # read manifest file, and process each line
-  do {
-
-    unless ($sampleName =~/(.*)\-\w+$/) {
-      validationError("Sample name '$sampleName' must be of the form XXXXXX-one, XXXXXX-two, XXXXX-forward or XXXXX-reverse");
-    };
-
-    $sampleName = $1;  # strip of -one or -two prefix;
-
-    push(@$sampleNames, $sampleName);
-
-    # validate file name and extension
-    my $extension = validateDataFileName($filename);
-    $extCounts->{$extension} += 1;
-
-    if ($extension eq 'txt') {
-	validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'sense' || $strandInfo eq 'antisense';
-    } elsif  ($extension eq 'bw') {
-	validationError("Illegal strand info '$strandInfo' in manifest") unless $strandInfo eq 'firststrand' || $strandInfo eq 'secondstrand';
-    } else {
-	validationError("Illegal file extension '$extension'");
-    }
-
-    validationError("Sample '$sampleName' with strand '$strandInfo' and '$extension' is repeated in manifest")
-      if $samples->{$sampleName}->{$strandInfo}->{$extension};
-    $samples->{$sampleName}->{$strandInfo}->{$extension} = 1;
-
-    # ensure file uniqueness
-    validationError("Repeated file name '$filename'") if $fileNames->{$filename};
-    $fileNames->{$filename} = 1;
-
-    # copy data file to output dir (and clean file name)
-    copyDataFile($filename);
-
-  } while(($sampleName, $filename, $strandInfo) = readAndValidateManifestLine($fh, $inputDir));
-
-  # confirm each sample has sense and antisense
-  foreach my $sample (keys %$samples) {
-    validationError("Sample '$sample' missing antisense") unless $samples->{$sample}->{antisense};
-    validationError("Sample '$sample' missing sense") unless $samples->{$sample}->{sense};
-  }
-}
-
 sub validateDataFileName {
   my ($filename) = @_;
 
@@ -178,10 +111,7 @@ sub validateTextFile {
   my $header = <DATA>;
   chomp($header);
 
-  if ($header eq "tracking_id\tclass_code\tnearest_ref_id\tgene_id\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status") {
-    # Cufflinks FPKM file
-    $columnCount = 13;
-  } elsif ($header eq "gene_id\tFPKM") {
+  if ($header eq "gene_id\tFPKM") {
     # FPKMtool file
     $columnCount = 2;
   } elsif ($header eq "gene_id\tTPM") {

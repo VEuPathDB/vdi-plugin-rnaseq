@@ -7,13 +7,15 @@ use lib "$FindBin::Bin/../lib/perl";
 use BigWigUtils;
 
 
-my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DATA_FILES');
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DB_SCHEMA', 'DATA_FILES');
 
 my ($userDatasetId) = @ARGV;
 
 usage() unless scalar(@ARGV) == 1;
 
 for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$envVar}; }
+
+my $dbSchema = $ENV{DB_SCHEMA};
 
 ##################################################
 # remove from file system
@@ -23,50 +25,49 @@ deleteUserDatasetDir("$ENV{DATA_FILES}/$userDatasetId");
 ##################################################
 # remove from appdb
 ##################################################
-
 my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
     || die "Couldn't connect to database: " . DBI->errstr;
 $dbh->{RaiseError} = 1;
 $dbh->{AutoCommit} = 0;
 
 my $deleteProtocolAppNodes = $dbh->prepare(<<EOF);
-    delete from apidbUserDatasets.UD_ProtocolAppNode
+    delete from $dbSchema.UD_ProtocolAppNode
     where profile_set_id
           in (select profile_set_id
-              from apidbUserDatasets.ud_ProfileSet
+              from $dbSchema.ud_ProfileSet
               where user_dataset_id = ?)
 EOF
 
 
 my $deleteNaFeatureExpression = $dbh->prepare(<<EOF);
-    DELETE from ApiDBUserDatasets.UD_NAFeatureExpression
+    DELETE from $dbSchema.UD_NAFeatureExpression
     WHERE protocol_app_node_id in (select protocol_app_node_id 
-                                   from apidbUserDatasets.UD_ProtocolAppNode
+                                   from $dbSchema.UD_ProtocolAppNode
                                    where profile_set_id
                                          in (select profile_set_id
-                                             from apidbUserDatasets.ud_ProfileSet
+                                             from $dbSchema.ud_ProfileSet
                                              where user_dataset_id = ?))
 EOF
 
 my $deleteProfileSet = $dbh->prepare(<<EOF);
-    DELETE from ApiDBUserDatasets.UD_ProfileSet
+    DELETE from $dbSchema.UD_ProfileSet
     WHERE user_dataset_id = ?
 EOF
 
-print STDERR "deleting from table ApiDBUserDatasets.UD_NAFeatureExpression\n";
+print STDERR "deleting from table $dbSchema.UD_NAFeatureExpression\n";
 $deleteNaFeatureExpression->execute($userDatasetId);
 
-print STDERR "deleting from table apidbUserDatasets.UD_ProtocolAppNode\n";
+print STDERR "deleting from table $dbSchema.UD_ProtocolAppNode\n";
 $deleteProtocolAppNodes->execute($userDatasetId);
 
-print STDERR "deleting from table ApiDBUserDatasets.UD_ProfileSet\n";
+print STDERR "deleting from table $dbSchema.UD_ProfileSet\n";
 $deleteProfileSet->execute($userDatasetId);
 
 $dbh->commit;
 
 sub usage {
 
-  my $envStr = join(", \$", @envVars);
+  my $envStr = '$' . join(", \$", @envVars);
 
   die "
 Uninstall an RNA Seq user dataset from the AppDB user dataset schema, and from jbrowse track files.
@@ -76,7 +77,7 @@ Usage: uninstall user_dataset_id
 Where:
   user_dataset_id:  a user dataset id
 
-Env: \$$envStr
+Env: $envStr
 
 ";
 }

@@ -10,10 +10,10 @@ use DbiBatchExecutor;
 use BigWigUtils;
 use File::Copy;
 
-my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DATA_FILES');
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DB_SCHEMA', 'DATA_FILES');
 
 sub usage {
-  my $envStr = join(", \$", @envVars);
+  my $envStr = '$' . join(", \$", @envVars);
 
   die "
 Install an RNASeq user dataset into a website.
@@ -28,7 +28,7 @@ Where:
 
 ASSUMES THE DATASET IS PRE-VALIDATED DURING IMPORT.  See the import script.
 
-Env: \$$envStr
+Env: $envStr
 ";
 }
 
