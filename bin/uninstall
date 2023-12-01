@@ -20,7 +20,7 @@ my $dbSchema = $ENV{DB_SCHEMA};
 ##################################################
 # remove from file system
 ##################################################
-deleteUserDatasetDir("$ENV{DATA_FILES}/$userDatasetId");
+deleteUserDatasetDir("$ENV{DATA_FILES}");
 
 ##################################################
 # remove from appdb
