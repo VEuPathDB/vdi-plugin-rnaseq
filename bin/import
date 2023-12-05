@@ -4,6 +4,7 @@ use strict;
 use Data::Dumper;
 use File::Copy;
 use FindBin;
+use File::Basename;
 use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
 
@@ -75,7 +76,8 @@ sub validateAndCopyFiles {
     $samples->{$sampleName}->{$extension} = 1;
 
     # ensure file uniqueness
-    validationError("Repeated file name '$filename'") if $fileNames->{$filename};
+    my $baseFile = basename($filename);
+    validationError("Repeated file name '$baseFile'") if $fileNames->{$filename};
     $fileNames->{$filename} = 1;
 
     # copy data file to output dir (and clean file name)
@@ -105,7 +107,7 @@ sub validateTextFile {
   my ($filename) = @_;
 
   open(DATA, $filename) or die "Cannot open file '$filename' for reading: $!\n";
-
+  my $baseFile = basename($filename);
   # check header to distinguish file type
   my $columnCount;
   my $header = <DATA>;
@@ -118,7 +120,7 @@ sub validateTextFile {
     # TPMtool file
     $columnCount = 2;
   } else {
-    validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
+    validationError("Unrecognized header record. Not a valid transcript abundance file. Must be two columns: 'gene_id' and either 'FPKM' or 'TPM'. File: $baseFile");
   }
 
   my $linenum = 1;
@@ -126,7 +128,7 @@ sub validateTextFile {
     $linenum++;
     chomp;
     my @a = split(/\t/);
-    validationError("Invalid row in file '$filename' line $linenum.  Wrong number of fields.  Expected $columnCount.")
+    validationError("Invalid row in file '$baseFile' line $linenum.  Wrong number of fields.  Expected $columnCount.")
       unless scalar(@a) == $columnCount;
   }
 }
