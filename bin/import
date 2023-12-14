@@ -53,7 +53,7 @@ input_dir will contain:
       - only files with .bw or .txt extension are allowed
       - a given SAMPLENAME can have zero or one of each of those extensions
 
-If there is a validation error, exit with status $VALIDATION_ERR_CODE.  STDOUT will contain the user-appropriate validation error message
+If there is a validation error, exit with status $VALIDATION_ERROR_CODE.  STDOUT will contain the user-appropriate validation error message
 ";
 }
 

@@ -3,11 +3,11 @@ package RnaSeqHandlerCommon;
 use strict;
 use Exporter;
 our @ISA = 'Exporter';
-our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERR_CODE readAndValidateManifestLine validationError);
+our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERROR_CODE readAndValidateManifestLine validationError);
 
 # constants
 our $MANIFEST_FILE = 'manifest.txt';
-our $VALIDATION_ERR_CODE = 1;
+our $VALIDATION_ERROR_CODE = 99;
 
 my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
 
@@ -45,7 +45,7 @@ sub validationError {
   my ($msg) = @_;
 
   print STDOUT "$msg\n";
-  exit($VALIDATION_ERR_CODE);
+  exit($VALIDATION_ERROR_CODE);
 }
 
 

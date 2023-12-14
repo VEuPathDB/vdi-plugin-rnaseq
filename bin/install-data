@@ -268,7 +268,7 @@ sub validationError {
   my ($msg) = @_;
 
   print STDOUT "$msg\n";
-  exit($VALIDATION_ERR_CODE);
+  exit($VALIDATION_ERROR_CODE);
 }
 
 
