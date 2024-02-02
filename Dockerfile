@@ -8,7 +8,7 @@ COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
 #COPY testdata/ /opt/veupathdb/testdata
 
-RUN export LIB_GIT_COMMIT_SHA=435acc522fdf44ec6d5171165db2b71079693100\
+RUN export LIB_GIT_COMMIT_SHA=84e8ff2c26968975a37449d5ea4e99b90c241b09\
     && git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
     && cd vdi-lib-plugin-rnaseq \
     && git checkout $LIB_GIT_COMMIT_SHA \
