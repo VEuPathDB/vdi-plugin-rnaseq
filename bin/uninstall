@@ -7,7 +7,7 @@ use lib "$FindBin::Bin/../lib/perl";
 use BigWigUtils;
 
 
-my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DB_SCHEMA', 'DATA_FILES');
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DB_SCHEMA');
 
 my ($userDatasetId) = @ARGV;
 
@@ -18,9 +18,8 @@ for my $envVar (@envVars) { die "Missing env variable '$envVar'\n" unless $ENV{$
 my $dbSchema = $ENV{DB_SCHEMA};
 
 ##################################################
-# remove from file system
+# Plugin handler service will remove the DATA_FILES dir for this UD
 ##################################################
-deleteUserDatasetDir("$ENV{DATA_FILES}");
 
 ##################################################
 # remove from appdb
