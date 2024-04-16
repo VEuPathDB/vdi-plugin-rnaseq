@@ -10,6 +10,8 @@ use DbiBatchExecutor;
 use BigWigUtils;
 use File::Copy;
 
+my $DEBUG = 0;
+
 my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DB_SCHEMA', 'DATA_FILES');
 
 sub usage {
@@ -157,31 +159,31 @@ EOF
 sub installTxtFile {
   my ($userDatasetId, $panName, $filename, $strand) = @_;
 
-  print STDERR "installing txt file $filename\n";
+  print STDERR "installing txt file $filename\n" if $DEBUG;
   my $psId;
   if ($profileSetIds{$strand}) {
     $psId = $profileSetIds{$strand};
   }
   else {
-    print STDERR "executing query psPkSh\n";
+    print STDERR "executing query psPkSh\n" if $DEBUG;
     $psPkSh->execute();
     ($psId) = $psPkSh->fetchrow_array();
 
-    print STDERR "executing insert profile set $psId $strand\n";
+    print STDERR "executing insert profile set $psId $strand\n" if $DEBUG;
     $insertProfileSet->execute($userDatasetId, $psId, $strand);
 
     $profileSetIds{$strand} = $psId;
   }
 
-  print STDERR "executing query panPkSh\n";
+  print STDERR "executing query panPkSh\n if $DEBUG";
   $panPkSh->execute();
   my ($panId) = $panPkSh->fetchrow_array();
 
-  print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n";
+  print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n if $DEBUG";
   $insertProtocolAppNode->execute($panId, $psId, $panName, $orderNum);
 
   my ($idIndex, $fpkmIndex);
-  print STDERR "opening fpkm file $filename\n";
+  print STDERR "opening fpkm file $filename\n if $DEBUG";
   open(DAT, $filename) or die "Cannot open file $filename for reading: $!";
 
   # check header to distinguish file type
@@ -208,10 +210,10 @@ sub installTxtFile {
     validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
   }
 
-  print STDERR "execute update profile set unit $psId $unit\n";
+  print STDERR "execute update profile set unit $psId $unit\n if $DEBUG";
   $updateProfileSetUnit->execute($unit, $psId);
 
-  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n";
+  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n if $DEBUG";
 
   my @panIdArray;
   my @naFeatureIdArray;
@@ -235,7 +237,7 @@ sub installTxtFile {
 
     my $naFeatureId = $geneIds{$sourceId};
     unless($naFeatureId) {
-      print STDERR "WARN: Could not find an na_feature_id for source_id $sourceId";
+      print STDERR "WARN: Could not find an na_feature_id for source_id $sourceId" if $DEBUG;
       next;
     }
     push(@panIdArray, $panId);
@@ -254,7 +256,7 @@ sub makeGeneSourceIdMapping {
 
   my $sql = "select source_id, na_feature_id from apidbtuning.geneattributes where organism in (select organism from apidbtuning.geneattributes where source_id = '$sourceId')";
 
-  print STDERR "execute query to map source ids to feature ids\n";
+  print STDERR "execute query to map source ids to feature ids\n"  # too verbose in the logs;
   my $sh = $dbh->prepare($sql);
   $sh->execute();
 
