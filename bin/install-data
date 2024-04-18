@@ -256,7 +256,7 @@ sub makeGeneSourceIdMapping {
 
   my $sql = "select source_id, na_feature_id from apidbtuning.geneattributes where organism in (select organism from apidbtuning.geneattributes where source_id = '$sourceId')";
 
-  print STDERR "execute query to map source ids to feature ids\n"  # too verbose in the logs;
+  print STDERR "execute query to map source ids to feature ids\n"; # too verbose in the logs
   my $sh = $dbh->prepare($sql);
   $sh->execute();
 
