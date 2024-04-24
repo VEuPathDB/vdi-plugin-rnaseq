@@ -113,14 +113,17 @@ sub validateTextFile {
   my $header = <DATA>;
   chomp($header);
 
-  if ($header eq "gene_id\tFPKM") {
+  if ($header eq "tracking_id\tclass_code\tnearest_ref_id\tgene_id\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status") {
+    # Cufflinks FPKM file
+    $columnCount = 13
+  } elsif ($header eq "gene_id\tFPKM") {
     # FPKMtool file
     $columnCount = 2;
   } elsif ($header eq "gene_id\tTPM") {
     # TPMtool file
     $columnCount = 2;
   } else {
-    validationError("Unrecognized header record. Not a valid transcript abundance file. Must be two columns: 'gene_id' and either 'FPKM' or 'TPM'. File: $baseFile");
+    validationError("Unrecognized header record. Not a valid transcript abundance file. Must have 'gene_id' in the first column and either 'FPKM' or 'TPM' in the second column, or, for a cufflinks file, have FPKM in the 10th column. File: $baseFile");
   }
 
   my $linenum = 1;
