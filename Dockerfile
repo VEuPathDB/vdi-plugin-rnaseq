@@ -1,4 +1,4 @@
-FROM veupathdb/vdi-plugin-base:8.0.6
+FROM veupathdb/vdi-plugin-base:8.0.7
 
 RUN apt-get update \
     && apt-get install -y python3-numpy python3-pybigwig \
