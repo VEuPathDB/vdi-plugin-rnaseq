@@ -1,4 +1,4 @@
-FROM veupathdb/vdi-plugin-base:8.1.0-rc3
+FROM veupathdb/vdi-plugin-base:8.1.0-rc4
 
 ARG LIB_GIT_COMMIT_SHA=099844ec5005e7fab95358b2b538dbe4f0581572
 ARG LIB_DBI_UTILS_VERSION=1.0.0
@@ -50,7 +50,7 @@ RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cp bin/* /opt/veupathdb/bin \
   && rm -rf lib-vdi-plugin-rnaseq
 
-
+  
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
 
