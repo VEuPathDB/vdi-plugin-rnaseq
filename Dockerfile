@@ -1,16 +1,12 @@
 FROM veupathdb/vdi-plugin-base:8.1.0-rc8
 
-ARG LIB_GIT_COMMIT_SHA=099844ec5005e7fab95358b2b538dbe4f0581572
-ARG LIB_DBI_UTILS_VERSION=1.0.0
-
-
 ENV ORACLE_HOME=/opt/oracle \
   LD_LIBRARY_PATH=/opt/oracle
 
 
 RUN apt-get update \
   && apt-get install -y git perl libaio1t64 libdbi-perl unzip python3 \
-    python3-numpy python3-pybigwig \
+    python3-numpy python3-pybigwig libtest-nowarnings-perl make gcc \
   && apt-get clean \
   && ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
 
@@ -35,6 +31,7 @@ RUN mkdir -p ${ORACLE_HOME} \
 
 
 # DBI UTILS
+ARG LIB_DBI_UTILS_VERSION=1.0.0
 RUN mkdir -p /opt/veupathdb/lib \
   && cd /opt/veupathdb/lib \
   && wget -q https://github.com/VEuPathDB/lib-perl-dbi-utils/releases/download/v${LIB_DBI_UTILS_VERSION}/dbi-utils-v${LIB_DBI_UTILS_VERSION}.zip -O utils.zip \
@@ -42,6 +39,7 @@ RUN mkdir -p /opt/veupathdb/lib \
   && rm utils.zip
 
 
+ARG LIB_GIT_COMMIT_SHA=099844ec5005e7fab95358b2b538dbe4f0581572
 RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cd vdi-lib-plugin-rnaseq \
   && git checkout ${LIB_GIT_COMMIT_SHA} \
