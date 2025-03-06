@@ -24,8 +24,12 @@ my $dbSchema = $ENV{DB_SCHEMA};
 ##################################################
 # remove from appdb
 ##################################################
-my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
-    || die "Couldn't connect to database: " . DBI->errstr;
+my $connectString = $ENV{DB_PLATFORM} eq 'Oracle'?
+    "dbi:Oracle://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}" :
+    "DBI:Pg:dbname=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}";
+
+my $dbh = DBI->connect($connectString) || die "Couldn't connect to database: " . DBI->errstr;
+
 $dbh->{RaiseError} = 1;
 $dbh->{AutoCommit} = 0;
 

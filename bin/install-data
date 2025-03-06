@@ -53,8 +53,12 @@ chmod(0775, $datasetDir) || die "Failed chmod of $datasetDir\n"; # rwxrwxr-x
 ##################################################
 # initialization for installing txt files to appdb
 ##################################################
-my $dbh = DBI->connect("dbi:$ENV{DB_PLATFORM}://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}", $ENV{DB_USER}, $ENV{DB_PASS})
-    || die "Couldn't connect to database: " . DBI->errstr;
+my $connectString = $ENV{DB_PLATFORM} eq 'Oracle'?
+    "dbi:Oracle://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}" :
+    "DBI:Pg:dbname=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}";
+
+my $dbh = DBI->connect($connectString) || die "Couldn't connect to database: " . DBI->errstr;
+
 $dbh->{RaiseError} = 1;
 $dbh->{AutoCommit} = 0;
 my %profileSetIds;
@@ -91,10 +95,14 @@ $dbh->commit;
 
 sub initializePreparedStmts {
 
-  my $panPkSql = "select $dbSchema.UD_ProtocolAppNode_sq.nextval from dual";
+  my $panPkSql = $ENV{DB_PLATFORM} eq 'Oracle'?
+      "select $dbSchema.UD_ProtocolAppNode_sq.nextval from dual":
+      "select nextval('$dbSchema.UD_ProtocolAppNode_sq')";
   my $panPkSh = $dbh->prepare($panPkSql);
 
-  my $psPkSql = "select $dbSchema.UD_ProfileSet_sq.nextval from dual";
+  my $psPkSql =  = $ENV{DB_PLATFORM} eq 'Oracle'?
+      "select $dbSchema.UD_ProfileSet_sq.nextval from dual":
+      "select nextval('$dbSchema.UD_ProfileSet_sq')";
   my $psPkSh = $dbh->prepare($psPkSql);
 
   my $insertProfileSet = $dbh->prepare(<<EOF);
@@ -115,10 +123,14 @@ EOF
     VALUES (?,?,?,?)
 EOF
 
+  my $seqNxtVal = $ENV{DB_PLATFORM} eq 'Oracle'?
+      "$dbSchema.UD_NaFeatureExpression_sq.nextval":
+      "nextval('$dbSchema.UD_NaFeatureExpression_sq')";
+      
   my $insertNaFeatureExpression = $dbh->prepare(<<EOF);
     INSERT INTO $dbSchema.UD_NaFeatureExpression
     (na_feat_expression_id, protocol_app_node_id, na_feature_id, value)
-    VALUES ($dbSchema.UD_NaFeatureExpression_sq.nextval,?,?,?)
+    VALUES ($seqNxtVal,?,?,?)
 EOF
 
   # query to switch the sense of stranded data if sense.median < antisense.median
