@@ -1,4 +1,4 @@
-FROM veupathdb/vdi-plugin-base:8.1.2
+FROM veupathdb/vdi-plugin-base:8.1.3
 
 ENV ORACLE_HOME=/opt/oracle \
   LD_LIBRARY_PATH=/opt/oracle
