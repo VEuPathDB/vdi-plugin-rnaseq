@@ -102,7 +102,20 @@ sub copyDataFile {
   my ($dataFile) = @_;
   my $out = $dataFile;
   my $out =~ s/[^\.-\w]/_/g;  # replace icky chars with underscore
-  copy("$inputDir/$dataFile", "$outputDir/$out");
+
+  # Copy the contents of the input file to a safe-named output file, replacing
+  # "Gene ID" with "gene_id" in the header line if necessary.
+  open(IN, '<'.$dataFile) or die $!;
+  open(OUT, '>'.$out) or die $!;
+  while (<IN>) {
+    if ($. == 1) {
+      print OUT s/Gene ID/gene_id/;
+    } else {
+      print OUT;
+    }
+  }
+  close(IN);
+  close(OUT);
 }
 
 sub validateTextFile {
@@ -115,13 +128,13 @@ sub validateTextFile {
   my $header = <DATA>;
   chomp($header);
 
-  if ($header eq "tracking_id\tclass_code\tnearest_ref_id\tgene_id\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status") {
+  if ($header =~ /tracking_id\tclass_code\tnearest_ref_id\t(?:gene_id|Gene ID)\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status/) {
     # Cufflinks FPKM file
     $columnCount = 13
-  } elsif ($header eq "gene_id\tFPKM") {
+  } elsif ($header =~ /(?:gene_id|Gene ID)\tFPKM/) {
     # FPKMtool file
     $columnCount = 2;
-  } elsif ($header eq "gene_id\tTPM") {
+  } elsif ($header =~ /(?:gene_id|Gene ID)\tTPM/) {
     # TPMtool file
     $columnCount = 2;
   } else {
