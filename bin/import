@@ -87,6 +87,7 @@ sub validateAndCopyFiles {
 
   } while(($sampleName, $filename) = readAndValidateManifestLine($fh, $inputDir));
 }
+
 sub validateDataFileName {
   my ($filename) = @_;
 
@@ -102,20 +103,7 @@ sub copyDataFile {
   my ($dataFile) = @_;
   my $out = $dataFile;
   my $out =~ s/[^\.-\w]/_/g;  # replace icky chars with underscore
-
-  # Copy the contents of the input file to a safe-named output file, replacing
-  # "Gene ID" with "gene_id" in the header line if necessary.
-  open(IN, '<'.$dataFile) or die $!;
-  open(OUT, '>'.$out) or die $!;
-  while (<IN>) {
-    if ($. == 1) {
-      print OUT s/Gene ID/gene_id/;
-    } else {
-      print OUT;
-    }
-  }
-  close(IN);
-  close(OUT);
+  copy("$inputDir/$dataFile", "$outputDir/$out");
 }
 
 sub validateTextFile {
