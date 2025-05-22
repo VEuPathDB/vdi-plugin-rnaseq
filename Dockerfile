@@ -37,10 +37,14 @@ RUN mkdir -p ${ORACLE_HOME} \
   \
   && cpan ZARQUON/DBD-Oracle-1.83.tar.gz
 
+RUN apt-get update \
+  && apt-get install -y python3-numpy python3-pybigwig \
+  && apt-get clean
+
 # DBI UTILS
 ARG LIB_DBI_UTILS_VERSION=1.0.0
-RUN mkdir -p /opt/veupathdb/lib \
-  && cd /opt/veupathdb/lib \
+RUN mkdir -p /opt/veupathdb/lib/perl \
+  && cd /opt/veupathdb/lib/perl \
   && wget -q https://github.com/VEuPathDB/lib-perl-dbi-utils/releases/download/v${LIB_DBI_UTILS_VERSION}/dbi-utils-v${LIB_DBI_UTILS_VERSION}.zip -O utils.zip \
   && unzip utils.zip \
   && rm utils.zip
@@ -53,10 +57,6 @@ RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cp lib/perl/BigWigUtils.pm /opt/veupathdb/lib/perl \
   && cp bin/* /opt/veupathdb/bin \
   && rm -rf lib-vdi-plugin-rnaseq
-
-RUN apt-get update \
-  && apt-get install -y python3-numpy python3-pybigwig \
-  && apt-get clean
 
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
