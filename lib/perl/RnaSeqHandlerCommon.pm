@@ -26,7 +26,7 @@ sub readAndValidateManifestLine {
 
   my @line = split(/\t/, $line);
 
-  validationError("Invalid manifest file.  Wrong number of columns: '$line'\n")
+  validationError("Invalid manifest file.  Wrong number of columns: '$line'. Must be two columns, tab delimited.")
     unless scalar(@line) == 2 || scalar(@line) == 3;  # third column for now must be 'stranded', so it is optional
 
   my ($sampleName, $filename, $strandInfo) = @line;

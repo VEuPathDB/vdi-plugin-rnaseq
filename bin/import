@@ -139,7 +139,7 @@ sub validateTextFile {
     $columnCount = 13
   } else {
     my @cols = split(/\t/, $header);
-    validationError("Wrong number of columns in file '$baseFile'.  Must be two columns (gene id and count)") unless scalar(@cols) == 2;
+    validationError("Wrong number of columns in file '$baseFile'.  Must be two columns (gene id and count), tab delimited") unless scalar(@cols) == 2;
     validationError("First row of file '$baseFile' must be textual column headings, eg, Gene ID and TPM") if looks_like_number($cols[0]) || looks_like_number($cols[1]);
     $columnCount = 2;
   }
