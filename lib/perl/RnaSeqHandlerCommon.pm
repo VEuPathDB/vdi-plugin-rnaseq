@@ -9,10 +9,11 @@ our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERROR_CODE readAndValidateManifestLi
 our $MANIFEST_FILE = 'manifest.txt';
 our $VALIDATION_ERROR_CODE = 99;
 
-my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
+#my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
+my @VALID_STRAND_TYPES = ('unstranded'); # only support unstranded for now.
 
 sub readAndValidateManifestLine {
-  my ($fh, $dataFilesDir) = @_;
+  my ($fh, $dataFilesDir) = @_;  
 
   #skip blank lines
   my $line;
@@ -26,17 +27,19 @@ sub readAndValidateManifestLine {
   my @line = split(/\t/, $line);
 
   validationError("Invalid manifest file.  Wrong number of columns: '$line'\n")
-    unless scalar(@line) == 3;
+    unless scalar(@line) == 2 || scalar(@line) == 3;  # third column for now must be 'stranded', so it is optional
 
   my ($sampleName, $filename, $strandInfo) = @line;
 
-  validationError("Invalid manifest file third column value '$strandInfo'.  Must be one of: " . join(', ', @VALID_STRAND_TYPES))
-      unless grep( /^$line[2]$/, @VALID_STRAND_TYPES );
+  $strandInfo = 'unstranded' unless $strandInfo;
+
+  validationError("Invalid manifest file third column value '$strandInfo'.  Must be: " . join(', ', @VALID_STRAND_TYPES))
+      unless grep( /^$strandInfo$/, @VALID_STRAND_TYPES );
   my $path = "$dataFilesDir/$filename";
 
   print STDERR "sample: $sampleName filepath: $path strand: $strandInfo\n";
 
-  validationError("File in manifest does not exist: '$dataFilesDir/$filename'") unless -e $path;
+  validationError("File in manifest does not exist: '$path'") unless -e $path;
 
   return @line;
 }

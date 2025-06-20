@@ -7,6 +7,7 @@ use FindBin;
 use File::Basename;
 use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
+use Scalar::Util qw(looks_like_number);
 
 usage() unless scalar(@ARGV) == 2;
 my ($inputDir, $outputDir) = @ARGV;
@@ -21,10 +22,13 @@ close($dh);
 validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/$MANIFEST_FILE";
 copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file '$inputDir/$MANIFEST_FILE' to '$outputDir/$MANIFEST_FILE': $!\n";
 
-open(my $fh, "$inputDir/$MANIFEST_FILE") or die "Can't open '$inputDir/$MANIFEST_FILE'\n";
+my $cmd = "dos2unix $outputDir/$MANIFEST_FILE";
+system($cmd) && die "Failed running '$cmd': $!";
+
+open(my $fh, "$outputDir/$MANIFEST_FILE") or die "Can't open '$outputDir/$MANIFEST_FILE'\n";
 my @lines = readAndValidateManifestLine($fh, $inputDir);
 
-validateAndCopyFiles($fh, \@lines, $inputDir);
+validateAndCopyFiles($fh, \@lines, $inputDir, $outputDir);
 
 # there should now be the same number of files in inputDir and outputDir.  If not, there were input files not listed in manifest.
 opendir($dh, $inputDir) or die "can't open dir '$inputDir'\n";
@@ -32,7 +36,7 @@ my $numInputFiles = () = readdir($dh);
 close($dh);
 opendir($dh, $outputDir) or die "can't open dir '$outputDir'\n";;
 my $numOutputFiles = () = readdir($dh);
-validationError("Files and manifest do not agree.  Wrong number of files") unless $numInputFiles == $numOutputFiles;
+validationError("Files and manifest do not agree.  Wrong number of files.  There should be one row per file.") unless $numInputFiles == $numOutputFiles;
 
 ############################################################################################################
 
@@ -46,21 +50,30 @@ input_dir: must contain the original dataset files, and no other files.
 output_dir: will contain the import-ready set of files.  In this case, the same as input.
 
 input_dir will contain:
-  $MANIFEST_FILE file with one line per file:
-      SAMPLENAME FILENAME STRAND
+  $MANIFEST_FILE file with one line per file
+  bigwig files (optional)
+  counts files
 
-  there will be one or more samples.  STRAND must be 'unstranded'.  (No longer support 'stranded')
-
-  FILENAME validation rules:
-      - only files with .bw or .txt extension are allowed
-      - a given SAMPLENAME can have zero or one of each of those extensions
+validation rules:
+ - allow windows newlines in manifest and counts files
+ - manifest must have a row for every file
+ - the manifest file has these columns:
+   - sample name
+   - file name (either bigwig or counts)
+   - strand.  this is optional.  if provided must be 'unstranded'
+ - for bigwig files, allow .bw and .bigwig
+ - if a data file does not have a .bw or .bigwig extension, it is assumed to be a counts file
+ - the counts file requires a header, but we don't validate the names
+ - the counts file has two columns:
+   - gene id (1st column)
+   - count (second column)  - this must be a floating point number
 
 If there is a validation error, exit with status $VALIDATION_ERROR_CODE.  STDOUT will contain the user-appropriate validation error message
 ";
 }
 
 sub validateAndCopyFiles {
-  my ($fh, $firstLine, $inputDir) = @_;
+  my ($fh, $firstLine, $inputDir, $outputFir) = @_;
 
   my $samples = {};
   my $fileNames = {};
@@ -68,22 +81,21 @@ sub validateAndCopyFiles {
 
   my ($sampleName, $filename, $strandInfo) = @$firstLine;
 
+
   # read manifest file, and process each line
   do {
-    validationError("Unsupported strand info in manifest column 3: '$strandInfo'") unless $strandInfo eq 'unstranded';
+    # copy data file to output dir (and clean newlines and file name)
+    my $cleanedFilePath = copyDataFile($filename, $inputDir, $outputFir);
 
     # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
-    my $extension = validateDataFileName($filename);
-    validationError("Sample '$sampleName' with '$extension' repeated in manifest") if $samples->{$sampleName}->{$extension};
-    $samples->{$sampleName}->{$extension} = 1;
+    my $type = validateDataFileName($cleanedFilePath);  # either bw or txt
+    validationError("Sample '$sampleName' with '$type' repeated in manifest.txt") if $samples->{$sampleName}->{$type};
+    $samples->{$sampleName}->{$type} = 1;
 
     # ensure file uniqueness
     my $baseFile = basename($filename);
-    validationError("Repeated file name '$baseFile'") if $fileNames->{$filename};
+    validationError("Repeated file name '$baseFile' in manifest.txt") if $fileNames->{$filename};
     $fileNames->{$filename} = 1;
-
-    # copy data file to output dir (and clean file name)
-    copyDataFile($filename);
 
   } while(($sampleName, $filename) = readAndValidateManifestLine($fh, $inputDir));
 }
@@ -92,18 +104,23 @@ sub validateDataFileName {
   my ($filename) = @_;
 
   # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
-  $filename =~ /.*\.(bw|txt)$/ or validationError("Invalid file name '$filename'.  Must have .bw or .txt extension");
-  my $extension = $1;
-  validateTextFile("$inputDir/$filename") if ($extension eq 'txt');
-  return $extension;
+  my $type = ($filename =~ /.*\.(bw|bigwig)$/)? 'bw' : 'txt';
+  validateTextFile($filename) if ($type eq 'txt');
+  return $type;
 }
 
 # copy file from inputDir to outputDir (and clean file name)
 sub copyDataFile {
-  my ($dataFile) = @_;
+  my ($dataFile, $inputDir, $outputDir) = @_;
+
   my $out = $dataFile;
-  my $out =~ s/[^\.-\w]/_/g;  # replace icky chars with underscore
+  $out =~ s/[^\.-\w]/_/g;  # replace icky chars with underscore
   copy("$inputDir/$dataFile", "$outputDir/$out");
+  if ($out !~ /\.bw$/ && $out !~ /\.bigwig$/) {
+    my $cmd = "dos2unix $outputDir/$out";
+    system($cmd) && die "Failed to run $cmd: $!";
+  }
+  return "$outputDir/$out";
 }
 
 sub validateTextFile {
@@ -116,14 +133,15 @@ sub validateTextFile {
   my $header = <DATA>;
   chomp($header);
 
+  # support cufflinks format for legacy datasets.
   if ($header =~ /^tracking_id\tclass_code\tnearest_ref_id\t(?:gene_id|Gene ID)\tgene_short_name\ttss_id\tlocus\tlength\tcoverage\tFPKM\tFPKM_conf_lo\tFPKM_conf_hi\tFPKM_status$/) {
     # Cufflinks FPKM file
     $columnCount = 13
-  } elsif ($header =~ /^(?:gene_id|Gene ID)\t(?:FPKM|TPM)$/) {
-    # FPKMtool or TPMtool file
-    $columnCount = 2;
   } else {
-    validationError("Unrecognized header record. Not a valid transcript abundance file. Must have 'gene_id' in the first column and either 'FPKM' or 'TPM' in the second column, or, for a cufflinks file, have FPKM in the 10th column. File: $baseFile");
+    my @cols = split(/\t/, $header);
+    validationError("Wrong number of columns in file '$baseFile'.  Must be two columns (gene id and count)") unless scalar(@cols) == 2;
+    validationError("First row of file '$baseFile' must be textual column headings, eg, Gene ID and TPM") if looks_like_number($cols[0]) || looks_like_number($cols[1]);
+    $columnCount = 2;
   }
 
   my $linenum = 1;
@@ -133,6 +151,10 @@ sub validateTextFile {
     my @a = split(/\t/);
     validationError("Invalid row in file '$baseFile' line $linenum.  Wrong number of fields.  Expected $columnCount.")
       unless scalar(@a) == $columnCount;
+    if ($columnCount == 2) {
+      validationError("In file '$baseFile' line $linenum, first column should be an ID.") if looks_like_number($a[0]);
+      validationError("In file '$baseFile' line $linenum, second column should be a floating point normalized value.")
+	unless $a[1] =~ /\d+\.\d+/;
+    }
   }
-}
-
+} 
