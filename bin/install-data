@@ -208,7 +208,7 @@ sub installTxtFile {
   if ($header =~ tr/\t// == 12) {        # Cufflinks FPKM file has 13 columns (12 delimiters)
     $unit = "FPKM";
     $fpkmIndex = 9;
-  } elsif ($header =~ /\t(FPKM|TPM)$/) { # FPKMtool or TPMtool file
+  } elsif ($header =~ /\t(.+)$/) { # allow any column heading for the count column.  typically FPKM or TPM
     $unit = $1;
     $fpkmIndex = 1;
   } else {
