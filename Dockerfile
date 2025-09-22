@@ -1,4 +1,4 @@
-FROM foxcapades/ubuntu-corretto:24.10-jdk21
+FROM foxcapades/ubuntu-corretto:24.04-jdk21
 
 ENV LANG=en_US.UTF-8 \
   JVM_MEM_ARGS="-Xms16m -Xmx64m" \
