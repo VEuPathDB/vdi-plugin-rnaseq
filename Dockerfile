@@ -64,7 +64,7 @@ COPY lib/ /opt/veupathdb/lib
 RUN chmod +x /opt/veupathdb/bin/*
 
 # VDI PLUGIN SERVER
-ARG PLUGIN_SERVER_VERSION=v1.7.0-a17
+ARG PLUGIN_SERVER_VERSION=v1.7.0-a19
 RUN curl "https://github.com/VEuPathDB/vdi-service/releases/download/${PLUGIN_SERVER_VERSION}/plugin-server.tar.gz" -Lf --no-progress-meter | tar -xz
 
 CMD PLUGIN_ID=rnaseq /startup.sh
