@@ -100,7 +100,7 @@ sub initializePreparedStmts {
       "select nextval('$dbSchema.UD_ProtocolAppNode_sq')";
   my $panPkSh = $dbh->prepare($panPkSql);
 
-  my $psPkSql =  = $ENV{DB_PLATFORM} eq 'Oracle'?
+  my $psPkSql = $ENV{DB_PLATFORM} eq 'Oracle'?
       "select $dbSchema.UD_ProfileSet_sq.nextval from dual":
       "select nextval('$dbSchema.UD_ProfileSet_sq')";
   my $psPkSh = $dbh->prepare($psPkSql);
