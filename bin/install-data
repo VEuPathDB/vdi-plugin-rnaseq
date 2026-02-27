@@ -187,14 +187,14 @@ sub installTxtFile {
     $profileSetIds{$strand} = $psId;
   }
 
-  print STDERR "executing query panPkSh\n if $DEBUG";
+  print STDERR "executing query panPkSh\n" if $DEBUG;
   $panPkSh->execute();
   my ($panId) = $panPkSh->fetchrow_array();
 
-  print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n if $DEBUG";
+  print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n" if $DEBUG;
   $insertProtocolAppNode->execute($panId, $psId, $panName, $orderNum);
 
-  print STDERR "opening fpkm file $filename\n if $DEBUG";
+  print STDERR "opening fpkm file $filename\n" if $DEBUG;
   open(DAT, $filename) or die "Cannot open file $filename for reading: $!";
 
   # check header to distinguish file type
@@ -215,10 +215,10 @@ sub installTxtFile {
     validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
   }
 
-  print STDERR "execute update profile set unit $psId $unit\n if $DEBUG";
+  print STDERR "execute update profile set unit $psId $unit\n" if $DEBUG;
   $updateProfileSetUnit->execute($unit, $psId);
 
-  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n if $DEBUG";
+  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n" if $DEBUG;
 
   my @panIdArray;
   my @naFeatureIdArray;
