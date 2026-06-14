@@ -69,7 +69,7 @@ my $count = 0;
 my ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocolAppNode, $insertNaFeatureExpression, $unswitchProfiles)  = initializePreparedStmts();
 
 #################################################################################
-# discover reference genome and get mapping from known aliases and transcript IDs to na_feature_id
+# discover reference genome and get mapping from provided id to na_feature_id
 #################################################################################
 my $orgNameForFiles = getRefGenome("$filesDir/meta.json");
 my $geneIds = makeGeneSourceIdMapping($dbh, $orgNameForFiles);
