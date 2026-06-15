@@ -16,7 +16,7 @@ RUN apk add --no-cache \
   && pip install --break-system-packages pybigwig
 
 # DBI UTILS
-ARG LIB_DBI_UTILS_VERSION=1.0.0
+ARG LIB_DBI_UTILS_VERSION=1.1.0
 RUN mkdir -p /opt/veupathdb/lib/perl \
   && cd /opt/veupathdb/lib/perl \
   && wget -q https://github.com/VEuPathDB/lib-perl-dbi-utils/releases/download/v${LIB_DBI_UTILS_VERSION}/dbi-utils-v${LIB_DBI_UTILS_VERSION}.zip -O utils.zip \
