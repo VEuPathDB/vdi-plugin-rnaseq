@@ -14,10 +14,15 @@ commitSize: how many rows will be included in a commit
 =cut
 
 sub new {
-  my ($class, $batchSize, $commitSize) = @_;
+  my ($class, $batchSize, $commitSize, $platform) = @_;
+
+  # Default to Oracle for backward compatibility if platform not provided
+  $platform = 'Oracle' unless $platform;
+
   my $self = {
 	      batchSize=> $batchSize,
 	      commitSize => $commitSize,
+	      platform => $platform,
 	      batchCount => 0,
 	      commitCount => 0,
 	      batchNum => 0
@@ -64,6 +69,18 @@ $batchExecutor->periodicallyExecuteBatch($sth, 1, [SQL_INTEGER, SQL_VARCHAR], \@
 sub periodicallyExecuteBatch {
   my ($self, $dbh, $sth, $finalBatch, $paramTypes, @arrayRefs) = @_;
 
+  my $platform = $self->{platform};
+
+  if ($platform ne 'Oracle') {
+    return $self->periodicallyExecuteBatchPostgres($dbh, $sth, $finalBatch, $paramTypes, @arrayRefs);
+  } else {
+    return $self->periodicallyExecuteBatchOracle($dbh, $sth, $finalBatch, $paramTypes, @arrayRefs);
+  }
+}
+
+sub periodicallyExecuteBatchOracle {
+  my ($self, $dbh, $sth, $finalBatch, $paramTypes, @arrayRefs) = @_;
+
   die "paramTypes and arrayRefs must have the same number of elements\n" if scalar(@$paramTypes) != scalar(@arrayRefs);
 
   $self->{batchCount}++;  # count of rows so far in this batch
@@ -106,6 +123,73 @@ sub periodicallyExecuteBatch {
       @$arrayRef = ();
     }
   }
+  if ($self->{commitCount} == $self->{commitSize} || $finalBatch) {
+    $dbh->commit();
+    $self->{commitCount} = 0;
+  }
+}
+
+sub periodicallyExecuteBatchPostgres {
+  my ($self, $dbh, $sth, $finalBatch, $paramTypes, @arrayRefs) = @_;
+
+  die "paramTypes and arrayRefs must have the same number of elements\n" if scalar(@$paramTypes) != scalar(@arrayRefs);
+
+  $self->{batchCount}++;  # count of rows so far in this batch
+  $self->{commitCount}++; # count of rows so far in this commit
+  $self->{rowNum}++;      # total number of rows processed
+
+  if ($self->{batchCount} == $self->{batchSize} || $finalBatch) {
+    my $numRows = scalar(@{$arrayRefs[0]});
+    return unless $numRows > 0;  # nothing to insert
+
+    # Get the original SQL from the prepared statement
+    my $originalSql = $sth->{Statement};
+
+    # Parse the SQL to extract INSERT...INTO clause and VALUES clause
+    # Expected format: INSERT INTO table (cols) VALUES (placeholders)
+    if ($originalSql =~ /^(.+?\bVALUES\s+)(\(.+?\))\s*$/is) {
+      my $insertPart = $1;  # "INSERT INTO table (cols) VALUES "
+      my $valuesPart = $2;  # "(val1, ?, ?)"
+
+      # Build multi-row VALUES clause
+      my @valuesClause = ($valuesPart) x $numRows;
+      my $multiValueSql = $insertPart . join(",\n  ", @valuesClause);
+
+      # Prepare the multi-value statement
+      my $multiSth = $dbh->prepare($multiValueSql);
+
+      # Bind all parameters in order: row1_col1, row1_col2, row2_col1, row2_col2, ...
+      my $paramIndex = 1;
+      for (my $row = 0; $row < $numRows; $row++) {
+        for (my $col = 0; $col < scalar(@arrayRefs); $col++) {
+          $multiSth->bind_param($paramIndex, $arrayRefs[$col]->[$row], $paramTypes->[$col]);
+          $paramIndex++;
+        }
+      }
+
+      # Execute the multi-value insert
+      print STDERR "start exec (Postgres multi-value: $numRows rows) " . localtime . "\n";
+      eval {
+        $multiSth->execute();
+      };
+      if ($@) {
+        my $err = $@;
+        print STDERR "end exec (FAILED) " . localtime . "\n";
+        die "Batch execution failed: $err\n";
+      }
+      print STDERR "end exec (Postgres multi-value) " . localtime . "\n";
+
+      $multiSth->finish();
+    } else {
+      die "Could not parse SQL statement for multi-value INSERT: $originalSql\n";
+    }
+
+    $self->{batchCount} = 0;
+    for my $arrayRef (@arrayRefs) {  # empty the provided arrays
+      @$arrayRef = ();
+    }
+  }
+
   if ($self->{commitCount} == $self->{commitSize} || $finalBatch) {
     $dbh->commit();
     $self->{commitCount} = 0;
