@@ -79,7 +79,7 @@ my ($geneAliases, $transcriptIds) = getGeneAliases($dbh, $orgNameForFiles);
 # iterate through lines of manifest file, processing each file (either txt or bw)
 #################################################################################
 
-open my $fh, "$filesDir/$MANIFEST_FILE" or die "Can't open manifest file '$filesDir/$MANIFEST_FILE' for reading:  $!";
+open(my $fh, "<:encoding(UTF-8)", "$filesDir/$MANIFEST_FILE") or die "Can't open manifest file '$filesDir/$MANIFEST_FILE' for reading:  $!";
 
 # manifest file columns:
 #    sampleName fileName strandInfo ('unstranded', 'sense' or 'antisense')
@@ -184,7 +184,7 @@ sub validateTxtFileIds {
   print STDERR "validating txt file $filename\n" if $DEBUG;
 
   print STDERR "opening fpkm file $filename\n" if $DEBUG;
-  open(DAT, "$filedir/$filename") or die "Cannot open file $filedir/$filename for reading: $!";
+  open(DAT, "<:encoding(UTF-8)", "$filedir/$filename") or die "Cannot open file $filedir/$filename for reading: $!";
 
   # parse header to determine score column
   my $header = <DAT>;
@@ -440,7 +440,7 @@ sub installTxtFile {
   $insertProtocolAppNode->execute($panId, $psId, $panName, $orderNum);
 
   print STDERR "opening fpkm file $filename to read header\n" if $DEBUG;
-  open(DAT, "$filedir/$filename") or die "Cannot open file $filedir/$filename for reading: $!";
+  open(DAT, "<:encoding(UTF-8)", "$filedir/$filename") or die "Cannot open file $filedir/$filename for reading: $!";
 
   # check header to get unit
   my $header = <DAT>;

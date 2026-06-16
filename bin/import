@@ -21,12 +21,26 @@ die "Output dir '$outputDir' must be empty\n" if $numOutputFiles != 2; # . and .
 close($dh);
 
 validationError("Missing required file: '$MANIFEST_FILE'") unless -e "$inputDir/$MANIFEST_FILE";
-copy("$inputDir/$MANIFEST_FILE", "$outputDir/$MANIFEST_FILE") || die "failed copying manifest file '$inputDir/$MANIFEST_FILE' to '$outputDir/$MANIFEST_FILE': $!\n";
 
-my $cmd = "dos2unix $outputDir/$MANIFEST_FILE";
-system($cmd) && die "Failed running '$cmd': $!";
+# Detect encoding and convert manifest file to UTF-8
+my $inputManifestPath = "$inputDir/$MANIFEST_FILE";
+my $outputManifestPath = "$outputDir/$MANIFEST_FILE";
+my $manifestEncoding = detectFileEncoding($inputManifestPath);
 
-open(my $fh, "$outputDir/$MANIFEST_FILE") or die "Can't open '$outputDir/$MANIFEST_FILE'\n";
+open(my $manifest_in, "<:encoding($manifestEncoding)", $inputManifestPath)
+  or die "Cannot open manifest file '$inputManifestPath' with encoding $manifestEncoding: $!\n";
+open(my $manifest_out, ">:encoding(UTF-8)", $outputManifestPath)
+  or die "Cannot open manifest file '$outputManifestPath' for UTF-8 writing: $!\n";
+
+while (my $line = <$manifest_in>) {
+  $line =~ s/\r\n/\n/g;  # Convert Windows CRLF to Unix LF
+  $line =~ s/\r/\n/g;    # Convert old Mac CR to Unix LF
+  print $manifest_out $line;
+}
+close($manifest_in);
+close($manifest_out);
+
+open(my $fh, "<:encoding(UTF-8)", $outputManifestPath) or die "Can't open '$outputManifestPath'\n";
 my @lines = readAndValidateManifestLine($fh, $outputDir);
 
 validateAndCopyFiles($fh, \@lines, $inputDir, $outputDir);
@@ -71,6 +85,29 @@ validation rules:
 
 If there is a validation error, exit with status $VALIDATION_ERROR_CODE.  STDOUT will contain the user-appropriate validation error message
 ";
+}
+
+sub detectFileEncoding {
+  my ($filename) = @_;
+
+  # Read first few bytes to check for BOM (Byte Order Mark)
+  open(my $fh, '<:raw', $filename) or die "Cannot open file '$filename' for encoding detection: $!\n";
+  my $bom;
+  read($fh, $bom, 4);
+  close($fh);
+
+  # Check for UTF-16 BOMs
+  if (length($bom) >= 2) {
+    my $first_two = substr($bom, 0, 2);
+    if ($first_two eq "\xFF\xFE") {
+      return 'UTF-16LE';
+    } elsif ($first_two eq "\xFE\xFF") {
+      return 'UTF-16BE';
+    }
+  }
+
+  # Default to UTF-8
+  return 'UTF-8';
 }
 
 sub validateAndCopyFiles {
@@ -121,18 +158,41 @@ sub copyDataFile {
 
   my $out = $dataFile;
   $out =~ s/[^\.-\w]/_/g;  # replace icky chars with underscore
-  copy("$inputDir/$dataFile", "$outputDir/$out");
-  if ($out !~ /\.bw$/ && $out !~ /\.bigwig$/) {
-    my $cmd = "dos2unix $outputDir/$out";
-    system($cmd) && die "Failed to run $cmd: $!";
+
+  my $inputPath = "$inputDir/$dataFile";
+  my $outputPath = "$outputDir/$out";
+
+  # For binary files (bigwig), just copy directly
+  if ($out =~ /\.(bw|bigwig)$/) {
+    copy($inputPath, $outputPath) or die "Failed to copy '$inputPath' to '$outputPath': $!\n";
+  } else {
+    # For text files, detect encoding and convert to UTF-8
+    my $encoding = detectFileEncoding($inputPath);
+
+    # Open input with detected encoding, output as UTF-8
+    open(my $in_fh, "<:encoding($encoding)", $inputPath)
+      or die "Cannot open input file '$inputPath' with encoding $encoding: $!\n";
+    open(my $out_fh, ">:encoding(UTF-8)", $outputPath)
+      or die "Cannot open output file '$outputPath' for UTF-8 writing: $!\n";
+
+    # Copy line by line, normalizing line endings
+    while (my $line = <$in_fh>) {
+      $line =~ s/\r\n/\n/g;  # Convert Windows CRLF to Unix LF
+      $line =~ s/\r/\n/g;    # Convert old Mac CR to Unix LF
+      print $out_fh $line;
+    }
+
+    close($in_fh);
+    close($out_fh);
   }
-  return "$outputDir/$out";
+
+  return $outputPath;
 }
 
 sub validateTextFile {
   my ($filename) = @_;
 
-  open(DATA, $filename) or die "Cannot open file '$filename' for reading: $!\n";
+  open(DATA, "<:encoding(UTF-8)", $filename) or die "Cannot open file '$filename' for reading: $!\n";
   my $baseFile = basename($filename);
   # check header to distinguish file type
   my $columnCount;
