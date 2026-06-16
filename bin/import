@@ -9,6 +9,7 @@ use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
 use BigWigUtils;
 use Scalar::Util qw(looks_like_number);
+use File::Basename;
 
 usage() unless scalar(@ARGV) == 2;
 my ($inputDir, $outputDir) = @ARGV;
@@ -41,7 +42,7 @@ close($manifest_in);
 close($manifest_out);
 
 open(my $fh, "<:encoding(UTF-8)", $outputManifestPath) or die "Can't open '$outputManifestPath'\n";
-my @lines = readAndValidateManifestLine($fh, $outputDir);
+my @lines = readAndValidateManifestLine($fh, $inputDir);
 
 validateAndCopyFiles($fh, \@lines, $inputDir, $outputDir);
 
@@ -119,37 +120,27 @@ sub validateAndCopyFiles {
 
   my ($sampleName, $filename, $strandInfo) = @$firstLine;
 
-
   # read manifest file, and process each line
   do {
-    # copy data file to output dir (and clean newlines and file name)
-    my $cleanedFilePath = copyDataFile($filename, $inputDir, $outputDir);
-
-    # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
-    my $type = validateDataFileName($cleanedFilePath);  # either bw or txt
-    validationError("Sample '$sampleName' with '$type' repeated in manifest.txt") if $samples->{$sampleName}->{$type};
-    $samples->{$sampleName}->{$type} = 1;
-d
-    if ($type eq 'bw') {
-      my $msg = validateBwFile($inputDir, $filename);
-      validationError($msg) if $msg;
-    }
-
     # ensure file uniqueness
     my $baseFile = basename($filename);
     validationError("Repeated file name '$baseFile' in manifest.txt") if $fileNames->{$filename};
     $fileNames->{$filename} = 1;
 
-  } while(($sampleName, $filename) = readAndValidateManifestLine($fh, $outputDir));
-}
+    # copy data file to output dir (and clean newlines and file name)
+    my ($cleanedFilePath, $type) = copyDataFile($filename, $inputDir, $outputDir);
 
-sub validateDataFileName {
-  my ($filename) = @_;
+    validationError("Sample '$sampleName' with '$type' repeated in manifest.txt") if $samples->{$sampleName}->{$type};
+    $samples->{$sampleName}->{$type} = 1;
 
-  # confirm valid extension.  ensure uniqueness.  validate text file.  (we don't validate .bw file)
-  my $type = ($filename =~ /.*\.(bw|bigwig)$/)? 'bw' : 'txt';
-  validateTextFile($filename) if ($type eq 'txt');
-  return $type;
+    if ($type eq 'bw') {
+      my $msg = validateBwFile($cleanedFilePath);
+      validationError($msg) if $msg;
+    } else {
+      validateTextFile($cleanedFilePath);
+    }
+
+  } while(($sampleName, $filename) = readAndValidateManifestLine($fh, $inputDir));
 }
 
 # copy file from inputDir to outputDir (and clean file name)
@@ -162,8 +153,10 @@ sub copyDataFile {
   my $inputPath = "$inputDir/$dataFile";
   my $outputPath = "$outputDir/$out";
 
+  my $type = ($out =~ /.*\.(bw|bigwig)$/)? 'bw' : 'txt';
+
   # For binary files (bigwig), just copy directly
-  if ($out =~ /\.(bw|bigwig)$/) {
+  if ($type eq 'bw') {
     copy($inputPath, $outputPath) or die "Failed to copy '$inputPath' to '$outputPath': $!\n";
   } else {
     # For text files, detect encoding and convert to UTF-8
@@ -186,7 +179,7 @@ sub copyDataFile {
     close($out_fh);
   }
 
-  return $outputPath;
+  return ($outputPath, $type);
 }
 
 sub validateTextFile {
@@ -206,7 +199,7 @@ sub validateTextFile {
   } else {
     my @cols = split(/\t/, $header);
     validationError("Wrong number of columns in file '$baseFile'.  Must be two columns (gene id and count), tab delimited") unless scalar(@cols) == 2;
-    validationError("First row of file '$baseFile' must have two column headings: \"geneID\" (or similar) and \"TPM\" or \"FPKM\"") if looks_like_number($cols[0]) or (lower($cols[1]) ne 'tpm' and lower($cols[1]) ne 'fpkm');
+    validationError("First row of file '$baseFile' must have two column headings: \"geneID\" (or similar) and \"TPM\" or \"FPKM\"") if looks_like_number($cols[0]) or (lc($cols[1]) ne 'tpm' and lc($cols[1]) ne 'fpkm');
     $columnCount = 2;
   }
 
