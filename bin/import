@@ -91,18 +91,17 @@ If there is a validation error, exit with status $VALIDATION_ERROR_CODE.  STDOUT
 sub detectFileEncoding {
   my ($filename) = @_;
 
-  # Read first few bytes to check for BOM (Byte Order Mark)
+  # Read first 2 bytes to check for UTF-16 BOM (Byte Order Mark)
   open(my $fh, '<:raw', $filename) or die "Cannot open file '$filename' for encoding detection: $!\n";
   my $bom;
-  read($fh, $bom, 4);
+  read($fh, $bom, 2);
   close($fh);
 
   # Check for UTF-16 BOMs
-  if (length($bom) >= 2) {
-    my $first_two = substr($bom, 0, 2);
-    if ($first_two eq "\xFF\xFE") {
+  if (length($bom) == 2) {
+    if ($bom eq "\xFF\xFE") {
       return 'UTF-16LE';
-    } elsif ($first_two eq "\xFE\xFF") {
+    } elsif ($bom eq "\xFE\xFF") {
       return 'UTF-16BE';
     }
   }
