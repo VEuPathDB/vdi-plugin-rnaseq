@@ -131,6 +131,7 @@ sub copyDataFile {
   my $inputPath = "$inputDir/$dataFile";
   my $outputPath = "$outputDir/$out";
 
+  # if a file is .bw or .bigwig, it is type 'bw', otherwise 'txt'
   my $type = ($out =~ /.*\.(bw|bigwig)$/)? 'bw' : 'txt';
 
   # For binary files (bigwig), just copy directly
