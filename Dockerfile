@@ -23,14 +23,23 @@ RUN mkdir -p /opt/veupathdb/lib/perl \
   && unzip utils.zip \
   && rm utils.zip
 
-ARG LIB_GIT_COMMIT_SHA=66d983cf6056dd12efd135673821e693fd57a0e9
+ARG LIB_RNASEQ_GIT_COMMIT_SHA=66d983cf6056dd12efd135673821e693fd57a0e9
 RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cd vdi-lib-plugin-rnaseq \
-  && git checkout ${LIB_GIT_COMMIT_SHA} \
+  && git checkout ${LIB_RNASEQ_GIT_COMMIT_SHA} \
   && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
   && cp lib/perl/BigWigUtils.pm /opt/veupathdb/lib/perl \
   && cp bin/* /opt/veupathdb/bin \
-  && rm -rf lib-vdi-plugin-rnaseq
+  && rm -rf vdi-lib-plugin-rnaseq
+
+ARG LIB_PERL_GIT_COMMIT_SHA=2cc9774d83334c720cdd75af83e6c2735804f2ad
+RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
+  && cd vdi-lib-perl-utils \
+  && git checkout ${LIB_PERL_GIT_COMMIT_SHA} \
+  && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
+  && cp lib/perl/EncodingDetect.pm /opt/veupathdb/lib/perl \
+  && cp bin/* /opt/veupathdb/bin \
+  && rm -rf vdi-lib-perl-utils
 
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib

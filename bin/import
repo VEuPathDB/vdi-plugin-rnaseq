@@ -8,6 +8,7 @@ use File::Basename;
 use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
 use BigWigUtils;
+use EncodingDetect;
 use Scalar::Util qw(looks_like_number);
 use File::Basename;
 
@@ -86,28 +87,6 @@ validation rules:
 
 If there is a validation error, exit with status $VALIDATION_ERROR_CODE.  STDOUT will contain the user-appropriate validation error message
 ";
-}
-
-sub detectFileEncoding {
-  my ($filename) = @_;
-
-  # Read first 2 bytes to check for UTF-16 BOM (Byte Order Mark)
-  open(my $fh, '<:raw', $filename) or die "Cannot open file '$filename' for encoding detection: $!\n";
-  my $bom;
-  read($fh, $bom, 2);
-  close($fh);
-
-  # Check for UTF-16 BOMs
-  if (length($bom) == 2) {
-    if ($bom eq "\xFF\xFE") {
-      return 'UTF-16LE';
-    } elsif ($bom eq "\xFE\xFF") {
-      return 'UTF-16BE';
-    }
-  }
-
-  # Default to UTF-8
-  return 'UTF-8';
 }
 
 sub validateAndCopyFiles {

@@ -89,7 +89,7 @@ while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $file
     $panName =~ s/\s+/_/g;
     installTxtFile($userDatasetId, $panName, $filesDir, $filename, $strand, $fileGeneIds);
   } else {
-    installBwFile("$filesDir/$filename", $datasetDir);
+    BigWigUtils::installBwFile("$filesDir/$filename", $datasetDir);
   }
 }
 
