@@ -1,0 +1,2 @@
+sample1	counts1.txt	unstranded	sample1.bw
+sample2	counts2.txt	unstranded	sample2.bigwig

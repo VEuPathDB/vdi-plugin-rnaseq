@@ -1,0 +1,2 @@
+sample1
+sample2	counts2.txt	unstranded	sample2.bw	extra_column

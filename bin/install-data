@@ -9,6 +9,8 @@ use RnaSeqHandlerCommon;
 use DbiBatchExecutor;
 use BigWigUtils;
 use File::Copy;
+use JSON qw( );
+
 
 my $DEBUG = 0;
 
@@ -64,22 +66,32 @@ $dbh->{AutoCommit} = 0;
 my %profileSetIds;
 my $orderNum = 1;
 my $count = 0;
-my %geneIds;
 my ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocolAppNode, $insertNaFeatureExpression, $unswitchProfiles)  = initializePreparedStmts();
+
+#################################################################################
+# discover reference genome and get mapping from provided id to na_feature_id
+#################################################################################
+my $orgNameForFiles = getRefGenome("$filesDir/meta.json");
+my ($geneAliases, $transcriptIds) = getGeneAliases($dbh, $orgNameForFiles);
+
 
 #################################################################################
 # iterate through lines of manifest file, processing each file (either txt or bw)
 #################################################################################
 
-open my $fh, "$filesDir/$MANIFEST_FILE" or die "Can't open manifest file '$filesDir/$MANIFEST_FILE' for reading:  $!";
+open(my $fh, "<:encoding(UTF-8)", "$filesDir/$MANIFEST_FILE") or die "Can't open manifest file '$filesDir/$MANIFEST_FILE' for reading:  $!";
 
 # manifest file columns:
 #    sampleName fileName strandInfo ('unstranded', 'sense' or 'antisense')
-while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $filesDir)) {
-  if ($filename =~ /(.+)\.txt$/) {
-    installTxtFile($userDatasetId, $panName, "$filesDir/$filename", $strand);
-  } else {
-    installBwFile("$filesDir/$filename", $datasetDir);
+while(my ($panName, $countFile, $strand, $bwFile) = readAndValidateManifestLine($fh, $filesDir)) {
+  if ($countFile) {
+    my $fileGeneIds = validateTxtFileIds($filesDir, $countFile, $geneAliases, $transcriptIds, $orgNameForFiles);
+    $panName =~ s/\s+/_/g;
+    installTxtFile($userDatasetId, $panName, $filesDir, $countFile, $strand, $fileGeneIds);
+  }
+
+  if ($bwFile) {
+    BigWigUtils::installBwFile("$filesDir/$bwFile", $datasetDir);
   }
 }
 
@@ -168,8 +180,243 @@ EOF
 
 }
 
+sub validateTxtFileIds {
+  my ($filedir, $filename, $geneAliases, $transcriptIds, $orgNameForFiles) = @_;
+
+  print STDERR "validating txt file $filename\n" if $DEBUG;
+
+  print STDERR "opening fpkm file $filename\n" if $DEBUG;
+  open(DAT, "<:encoding(UTF-8)", "$filedir/$filename") or die "Cannot open file $filedir/$filename for reading: $!";
+
+  # parse header to determine score column
+  my $header = <DAT>;
+  chomp($header);
+
+  my $idIndex = 0;
+  my $scoreIndex;
+
+  if ($header =~ tr/\t// == 12) {        # Cufflinks FPKM file has 13 columns (12 delimiters)
+    $scoreIndex = 9;
+  } elsif ($header =~ /\t(.+)$/) {       # allow any column heading for the score column
+    $scoreIndex = 1;
+  } else {
+    validationError("Unrecognized header record: '$header'.
+Not a valid transcript abundance file. File: $filename");
+  }
+
+  # First pass: read all data and determine ID type
+  my @fileData;
+  my $geneIdCount = 0;
+  my $transcriptIdCount = 0;
+  my $unmappedCount = 0;
+
+  while(<DAT>) {
+    chomp;
+    next unless $_;
+
+    my @a = split(/\t/, $_);
+    my $inputId = $a[$idIndex];
+    my $score = $a[$scoreIndex];
+
+    next unless $inputId;
+
+    push(@fileData, [$inputId, $score]);
+
+    # classify this ID
+    if ($transcriptIds->{$inputId}) {
+      $transcriptIdCount++;
+    } elsif ($geneAliases->{$inputId}) {
+      $geneIdCount++;
+    } else {
+      $unmappedCount++;
+    }
+  }
+  close(DAT);
+
+  # Determine mode: transcript, gene, or mixed
+  my $isTranscriptMode = 0;
+  if ($transcriptIdCount > 0 && $geneIdCount > 0) {
+    validationError("File $filename has mixed ID types. There are $transcriptIdCount transcript IDs, but not all IDs are valid transcript IDs (found $geneIdCount gene aliases and $unmappedCount unmapped IDs).");
+  } elsif ($transcriptIdCount > 0) {
+    $isTranscriptMode = 1;
+  }
+
+  if ($isTranscriptMode) {
+    # TRANSCRIPT MODE: sum scores by gene
+    return validateAndProcessTranscriptIds(\@fileData, $transcriptIds, $filename, $orgNameForFiles);
+  } else {
+    # GENE MODE: existing logic
+    return validateAndProcessGeneIds(\@fileData, $geneAliases, $filename, $orgNameForFiles);
+  }
+}
+
+sub validateAndProcessTranscriptIds {
+  my ($fileData, $transcriptIds, $filename, $orgNameForFiles) = @_;
+
+  # track issues
+  my @duplicateTranscriptIds;
+  my @notMappedIds;
+  my $duplicateCnt = 0;
+  my $notMappedCnt = 0;
+
+  my $seenTranscriptIds = {};
+  my $geneIds = {};
+
+  foreach my $row (@$fileData) {
+    my ($inputId, $score) = @$row;
+
+    # check for duplicate transcript IDs
+    if ($seenTranscriptIds->{$inputId}) {
+      push(@duplicateTranscriptIds, $inputId) unless @duplicateTranscriptIds >= 10;
+      $duplicateCnt++;
+      next;
+    }
+    $seenTranscriptIds->{$inputId} = 1;
+
+    # check if mapped
+    if (!$transcriptIds->{$inputId}) {
+      push(@notMappedIds, $inputId) unless @notMappedIds >= 10;
+      $notMappedCnt++;
+      next;
+    }
+
+    # get gene for this transcript
+    my $geneId = $transcriptIds->{$inputId}->{gene_id};
+    my $naFeatureId = $transcriptIds->{$inputId}->{na_feature_id};
+
+    # initialize gene entry if needed
+    if (!$geneIds->{$geneId}) {
+      $geneIds->{$geneId} = {
+        na_feature_id => $naFeatureId,
+        entries => []
+      };
+    }
+
+    # add [transcriptId, score] pair - will sum later
+    push(@{$geneIds->{$geneId}->{entries}}, [$inputId, $score]);
+  }
+
+  # report validation errors if any
+  if ($duplicateCnt || $notMappedCnt) {
+    my $errMsg = "Problems with provided transcript IDs in file $filename:\n";
+
+    if ($duplicateCnt) {
+      $errMsg .= "  $duplicateCnt transcript ID(s) are duplicated. For example: " . join(", ", @duplicateTranscriptIds) . "\n";
+    }
+    if ($notMappedCnt) {
+      $errMsg .= "  $notMappedCnt ID(s) are not mappable to our $orgNameForFiles transcript IDs. For example: " . join(", ", @notMappedIds) . "\n";
+    }
+    validationError($errMsg);
+  }
+
+  # sum scores for each gene (convert entries to summed score)
+  foreach my $geneId (keys %$geneIds) {
+    my $entries = $geneIds->{$geneId}->{entries};
+    my $sumScore = 0;
+    foreach my $entry (@$entries) {
+      $sumScore += $entry->[1];
+    }
+    # replace entries with a single summed entry
+    $geneIds->{$geneId}->{entries} = [['summed', $sumScore]];
+  }
+
+  return $geneIds;
+}
+
+sub validateAndProcessGeneIds {
+  my ($fileData, $geneAliases, $filename, $orgNameForFiles) = @_;
+
+  # build gene-centric $geneIds structure
+  my $geneIds = {};
+
+  # track validation issues - only capture first 10 examples
+  my @ambiguousIds;
+  my @notMappedIds;
+  my $ambiguousCnt = 0;
+  my $notMappedCnt = 0;
+
+  foreach my $row (@$fileData) {
+    my ($inputId, $score) = @$row;
+
+    # check if input ID maps to gene(s)
+    if (!$geneAliases->{$inputId}) {
+      push(@notMappedIds, $inputId) unless @notMappedIds >= 10;
+      $notMappedCnt += 1;
+      next;
+    }
+
+    # check if input ID is ambiguous (maps to multiple genes)
+    if (@{$geneAliases->{$inputId}->{genes}} > 1) {
+      push(@ambiguousIds, $inputId) unless @ambiguousIds >= 10;
+      $ambiguousCnt += 1;
+      next;
+    }
+
+    # get the single gene this input ID maps to
+    my $geneId = $geneAliases->{$inputId}->{genes}->[0];
+    my $naFeatureId = $geneAliases->{$inputId}->{feats}->[0];
+
+    # initialize gene entry if needed
+    if (!$geneIds->{$geneId}) {
+      $geneIds->{$geneId} = {
+        na_feature_id => $naFeatureId,
+        entries => []
+      };
+    }
+
+    # add [inputId, score] pair to this gene's entries
+    push(@{$geneIds->{$geneId}->{entries}}, [$inputId, $score]);
+  }
+
+  # check for genes with clashing input IDs (different scores)
+  my @clashingIdsPerGene;
+  my $clashingCnt = 0;
+
+  foreach my $geneId (keys %$geneIds) {
+    my $entries = $geneIds->{$geneId}->{entries};
+
+    if (@$entries > 1) {
+      # check if all scores are the same
+      my $firstScore = $entries->[0]->[1];
+      my $hasDifferentScores = 0;
+
+      for my $entry (@$entries) {
+        if ($entry->[1] != $firstScore) {
+          $hasDifferentScores = 1;
+          last;
+        }
+      }
+
+      if ($hasDifferentScores) {
+        $clashingCnt += 1;
+        if (@clashingIdsPerGene < 10) {
+          my $exampleStr = "$geneId: ";
+          $exampleStr .= join(", ", map { "$_->[0] (score: $_->[1])" } @$entries);
+          push(@clashingIdsPerGene, $exampleStr);
+        }
+      }
+    }
+  }
+
+  # report validation errors if any
+  return $geneIds unless $notMappedCnt || $ambiguousCnt || $clashingCnt;
+
+  my $errMsg = "Problems with provided IDs in file $filename:\n";
+
+  if ($notMappedCnt) {
+    $errMsg .= "  $notMappedCnt ID(s) are not mappable to our $orgNameForFiles gene IDs. For example: " . join(", ", @notMappedIds) . "\n";
+  }
+  if ($ambiguousCnt) {
+    $errMsg .= "  $ambiguousCnt ID(s) map to more than one of our gene IDs. For example: " . join(", ", @ambiguousIds) . "\n";
+  }
+  if ($clashingCnt) {
+    $errMsg .= "  $clashingCnt of our gene IDs have multiple input IDs with different scores. For example:\n    " . join("\n    ", @clashingIdsPerGene) . "\n";
+  }
+  validationError($errMsg);
+}
+
 sub installTxtFile {
-  my ($userDatasetId, $panName, $filename, $strand) = @_;
+  my ($userDatasetId, $panName, $filedir, $filename, $strand, $geneIds) = @_;
 
   print STDERR "installing txt file $filename\n" if $DEBUG;
   my $psId;
@@ -194,81 +441,108 @@ sub installTxtFile {
   print STDERR "executing insert protocol app node $psId $panId $panName $orderNum\n" if $DEBUG;
   $insertProtocolAppNode->execute($panId, $psId, $panName, $orderNum);
 
-  print STDERR "opening fpkm file $filename\n" if $DEBUG;
-  open(DAT, $filename) or die "Cannot open file $filename for reading: $!";
+  print STDERR "opening fpkm file $filename to read header\n" if $DEBUG;
+  open(DAT, "<:encoding(UTF-8)", "$filedir/$filename") or die "Cannot open file $filedir/$filename for reading: $!";
 
-  # check header to distinguish file type
+  # check header to get unit
   my $header = <DAT>;
   chomp($header);
+  close(DAT);
 
-  my $idIndex = 0;
-  my $fpkmIndex;
   my $unit;
 
   if ($header =~ tr/\t// == 12) {        # Cufflinks FPKM file has 13 columns (12 delimiters)
     $unit = "FPKM";
-    $fpkmIndex = 9;
   } elsif ($header =~ /\t(.+)$/) { # allow any column heading for the count column.  typically FPKM or TPM
     $unit = $1;
-    $fpkmIndex = 1;
   } else {
-    validationError("Unrecognized header record. Not a valid transcript abundance file. File: $filename");
+    validationError("Unrecognized header record: '$header'.
+Not a valid transcript abundance file. File: $filename");
   }
 
   print STDERR "execute update profile set unit $psId $unit\n" if $DEBUG;
   $updateProfileSetUnit->execute($unit, $psId);
 
-  print STDERR "iterate through fpkm file, inserting to na feature expression for each source id.  commit every 1000 rows\n" if $DEBUG;
+  print STDERR "iterate through geneIds, inserting to na feature expression for each gene.  commit every 1000 rows\n" if $DEBUG;
 
   my @panIdArray;
   my @naFeatureIdArray;
   my @fpkmArray;
-  my $batchExecutor = new DbiBatchExecutor(100, 1000);
+  my $batchExecutor = new DbiBatchExecutor(1000, 1000, $ENV{DB_PLATFORM});
+  my $cnt = 0;
+  # loop through gene-centric $geneIds structure
+  foreach my $geneId (keys %$geneIds) {
+    $cnt += 1;
+    my $naFeatureId = $geneIds->{$geneId}->{na_feature_id};
+    my $entries = $geneIds->{$geneId}->{entries};
 
-#  $insertNaFeatureExpression->bind_param(1, 1.0, { TYPE => SQL_DOUBLE });
-  while(<DAT>) {
-    chomp;
+    # use first entry's score (validation ensures all scores match for this gene)
+    my $score = $entries->[0]->[1];
 
-    my @a = split(/\t/, $_);
-
-    my $sourceId = $a[$idIndex];
-    my $fpkm = $a[$fpkmIndex];
-
-    next unless($sourceId);
-
-    unless(%geneIds) {
-      &makeGeneSourceIdMapping($sourceId, $dbh); # use this gene's source id to find the relevant organism and initialize mapping of all its source_ids.
-    }
-
-    my $naFeatureId = $geneIds{$sourceId};
-    unless($naFeatureId) {
-      print STDERR "WARN: Could not find an na_feature_id for source_id $sourceId" if $DEBUG;
-      next;
-    }
     push(@panIdArray, $panId);
     push(@naFeatureIdArray, $naFeatureId);
-    push(@fpkmArray, $fpkm);
+    push(@fpkmArray, $score);
     $batchExecutor->periodicallyExecuteBatch($dbh, $insertNaFeatureExpression, 0, [SQL_INTEGER, SQL_INTEGER, SQL_DOUBLE], \@panIdArray, \@naFeatureIdArray, \@fpkmArray);
-
   }
   $batchExecutor->periodicallyExecuteBatch($dbh, $insertNaFeatureExpression, 1, [SQL_INTEGER, SQL_INTEGER, SQL_DOUBLE], \@panIdArray, \@naFeatureIdArray, \@fpkmArray);
 
   $orderNum++;
 }
 
-sub makeGeneSourceIdMapping {
-  my ($sourceId, $dbh) = @_;
+sub getGeneAliases {
+  my ($dbh, $orgNameForFiles) = @_;
 
-  my $sql = "select source_id, na_feature_id from apidbtuning.geneattributes where organism in (select organism from apidbtuning.geneattributes where source_id = '$sourceId')";
+  my $sql = "select internal_abbrev from apidbtuning.organismattributes where name_for_filenames = '$orgNameForFiles'";
 
-  print STDERR "execute query to map source ids to feature ids\n"; # too verbose in the logs
+  print STDERR "execute query to get org_abbrev\n";
   my $sh = $dbh->prepare($sql);
   $sh->execute();
+  my ($orgAbbrev) = $sh->fetchrow_array();
+  validationError("Can't find organism $orgNameForFiles") unless $orgAbbrev;
 
-  while(my ($sourceId, $naFeatureId) = $sh->fetchrow_array()) {
-    $geneIds{$sourceId} = $naFeatureId;
+  # map all gene aliases (not including transcripts) to the gene source_id and na_feature_id
+  $sql = "SELECT a.gene AS gene_source_id, a.ID as alias, ga.na_feature_id
+                FROM webready.GeneId_p a, webready.GeneAttributes_p ga
+                WHERE ga.source_id = a.gene
+                  AND ga.org_abbrev = '$orgAbbrev'
+		  and a.org_abbrev = '$orgAbbrev'";
+
+  print STDERR "execute query to map gene aliases to feature ids\n";
+  $sh = $dbh->prepare($sql);
+  $sh->execute();
+
+  my $geneAliases = {};
+  while(my ($sourceId, $alias, $naFeatureId) = $sh->fetchrow_array()) {
+    if (!$geneAliases->{$alias}) {
+      $geneAliases->{$alias}->{genes} = [];
+      $geneAliases->{$alias}->{feats} = [];
+    }
+    push(@{$geneAliases->{$alias}->{genes}}, $sourceId);
+    push(@{$geneAliases->{$alias}->{feats}}, $naFeatureId);
   }
   $sh->finish();
+
+  # map transcript IDs to their gene source_id and na_feature_id
+  $sql = "SELECT gene_source_id, ta.source_id as transcript_id, ga.na_feature_id
+                FROM webready.transcriptattributes_p ta, webready.GeneAttributes_p ga
+                WHERE ga.source_id = ta.gene_source_id
+                  AND ga.org_abbrev = '$orgAbbrev'
+		  and ta.org_abbrev = '$orgAbbrev'";
+
+  print STDERR "execute query to map transcript ids to gene ids\n";
+  $sh = $dbh->prepare($sql);
+  $sh->execute();
+
+  my $transcriptIds = {};
+  while(my ($geneId, $transcriptId, $naFeatureId) = $sh->fetchrow_array()) {
+    $transcriptIds->{$transcriptId} = {
+      gene_id => $geneId,
+      na_feature_id => $naFeatureId
+    };
+  }
+  $sh->finish();
+
+  return ($geneAliases, $transcriptIds);
 }
 
 sub validationError {
@@ -278,4 +552,28 @@ sub validationError {
   exit($VALIDATION_ERROR_CODE);
 }
 
+# return the orgNameForFiles of the genome declared as a dependency
+sub getRefGenome {
+  my ($metaJsonFile) = @_;
 
+  my $json_text = do {
+    open(my $json_fh, "<:encoding(UTF-8)", $metaJsonFile)
+      or die("Can't open \"$metaJsonFile\": $!\n");
+    local $/;
+    <$json_fh>
+  };
+
+  my $json = JSON->new;
+  my $metadata = $json->decode($json_text);
+
+  my $dependencies = $metadata->{meta}->{dependencies};
+
+  validationError("More than one reference genome") if (@$dependencies != 1);
+
+  my $genomeIdentifier = $dependencies->[0]->{resourceIdentifier};
+
+  # extract org name from eg PlasmoDB-51_Pfalciparum3D7_Genome
+  $genomeIdentifier =~ /^[A-Za-z]+-\d+_(.+)_Genome/ || validationError("Invalid genome resource format: $genomeIdentifier");
+  my $orgNameForFiles = $1;
+  return $orgNameForFiles;
+}

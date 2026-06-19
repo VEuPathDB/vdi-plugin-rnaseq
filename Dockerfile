@@ -16,21 +16,30 @@ RUN apk add --no-cache \
   && pip install --break-system-packages pybigwig
 
 # DBI UTILS
-ARG LIB_DBI_UTILS_VERSION=1.0.0
+ARG LIB_DBI_UTILS_VERSION=1.1.0
 RUN mkdir -p /opt/veupathdb/lib/perl \
   && cd /opt/veupathdb/lib/perl \
   && wget -q https://github.com/VEuPathDB/lib-perl-dbi-utils/releases/download/v${LIB_DBI_UTILS_VERSION}/dbi-utils-v${LIB_DBI_UTILS_VERSION}.zip -O utils.zip \
   && unzip utils.zip \
   && rm utils.zip
 
-ARG LIB_GIT_COMMIT_SHA=768bfe1877dd8068215b0f42a9652236b77ad304
+ARG LIB_RNASEQ_GIT_COMMIT_SHA=9ca154b9ae22eb2d1df94e54a7644afd8dee25bc
 RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cd vdi-lib-plugin-rnaseq \
-  && git checkout ${LIB_GIT_COMMIT_SHA} \
+  && git checkout ${LIB_RNASEQ_GIT_COMMIT_SHA} \
   && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
   && cp lib/perl/BigWigUtils.pm /opt/veupathdb/lib/perl \
   && cp bin/* /opt/veupathdb/bin \
-  && rm -rf lib-vdi-plugin-rnaseq
+  && rm -rf vdi-lib-plugin-rnaseq
+
+ARG LIB_PERL_GIT_COMMIT_SHA=2cc9774d83334c720cdd75af83e6c2735804f2ad
+RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
+  && cd vdi-lib-perl-utils \
+  && git checkout ${LIB_PERL_GIT_COMMIT_SHA} \
+  && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
+  && cp lib/perl/EncodingDetect.pm /opt/veupathdb/lib/perl \
+  && cp bin/* /opt/veupathdb/bin \
+  && rm -rf vdi-lib-perl-utils
 
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
