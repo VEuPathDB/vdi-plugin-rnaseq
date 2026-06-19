@@ -83,13 +83,15 @@ open(my $fh, "<:encoding(UTF-8)", "$filesDir/$MANIFEST_FILE") or die "Can't open
 
 # manifest file columns:
 #    sampleName fileName strandInfo ('unstranded', 'sense' or 'antisense')
-while(my ($panName, $filename, $strand) = readAndValidateManifestLine($fh, $filesDir)) {
-  if ($filename =~ /(.+)\.txt$/) {
-    my $fileGeneIds = validateTxtFileIds($filesDir, $filename, $geneAliases, $transcriptIds, $orgNameForFiles);
+while(my ($panName, $countFile, $strand, $bwFile) = readAndValidateManifestLine($fh, $filesDir)) {
+  if ($countFile) {
+    my $fileGeneIds = validateTxtFileIds($filesDir, $countFile, $geneAliases, $transcriptIds, $orgNameForFiles);
     $panName =~ s/\s+/_/g;
-    installTxtFile($userDatasetId, $panName, $filesDir, $filename, $strand, $fileGeneIds);
-  } else {
-    BigWigUtils::installBwFile("$filesDir/$filename", $datasetDir);
+    installTxtFile($userDatasetId, $panName, $filesDir, $countFile, $strand, $fileGeneIds);
+  }
+
+  if ($bwFile) {
+    BigWigUtils::installBwFile("$filesDir/$bwFile", $datasetDir);
   }
 }
 
@@ -571,7 +573,7 @@ sub getRefGenome {
   my $genomeIdentifier = $dependencies->[0]->{resourceIdentifier};
 
   # extract org name from eg PlasmoDB-51_Pfalciparum3D7_Genome
-  $genomeIdentifier =~ /^[A-z]+-\d+_(.+)_Genome/ || validationError("Invalid genome resource format: $genomeIdentifier");
+  $genomeIdentifier =~ /^[A-Za-z]+-\d+_(.+)_Genome/ || validationError("Invalid genome resource format: $genomeIdentifier");
   my $orgNameForFiles = $1;
   return $orgNameForFiles;
 }
