@@ -1,0 +1,6 @@
+sample1	counts1.txt
+sample2	counts2.txt	unstranded
+sample3	counts3.txt	sample3.bw
+sample4	counts4.txt	unstranded	sample4.bigwig
+sample5	sample5.bw
+sample6	sample6.bigwig	unstranded

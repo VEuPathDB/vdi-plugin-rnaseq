@@ -1,0 +1,2 @@
+sample1	sample1.bw
+sample2	sample2.bigwig	unstranded

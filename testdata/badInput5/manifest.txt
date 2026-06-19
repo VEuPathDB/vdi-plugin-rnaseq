@@ -1,2 +1,0 @@
-sample1	somefile.txt	unstranded
-sample1	somefile.txt	unstranded

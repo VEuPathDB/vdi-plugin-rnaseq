@@ -1,0 +1,4 @@
+GeneID	TPM	ExtraColumn
+GENE001	1.23	extra
+GENE002	45.67	data
+GENE003	8.90	here

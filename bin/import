@@ -43,9 +43,9 @@ close($manifest_in);
 close($manifest_out);
 
 open(my $fh, "<:encoding(UTF-8)", $outputManifestPath) or die "Can't open '$outputManifestPath'\n";
-my @lines = readAndValidateManifestLine($fh, $inputDir);
+my @line = readAndValidateManifestLine($fh, $inputDir);
 
-validateAndCopyFiles($fh, \@lines, $inputDir, $outputDir);
+validateAndCopyFiles($fh, \@line, $inputDir, $outputDir);
 
 # there should now be the same number of files in inputDir and outputDir.  If not, there were input files not listed in manifest.
 opendir($dh, $inputDir) or die "can't open dir '$inputDir'\n";
@@ -96,29 +96,35 @@ sub validateAndCopyFiles {
   my $fileNames = {};
   my $sampleNames = [];
 
-  my ($sampleName, $filename, $strandInfo) = @$firstLine;
+  my ($sampleName, $countFile, $strandInfo, $bwFile) = @$firstLine;
 
   # read manifest file, and process each line
   do {
-    # ensure file uniqueness
-    my $baseFile = basename($filename);
-    validationError("Repeated file name '$baseFile' in manifest.txt") if $fileNames->{$filename};
-    $fileNames->{$filename} = 1;
+    handleDataFile($sampleName, $countFile, $inputDir, $outputDir, $samples, $fileNames) if $countFile;
+    handleDataFile($sampleName, $bwFile, $inputDir, $outputDir, $samples, $fileNames) if $bwFile;
+  } while(($sampleName, $countFile, $strandInfo, $bwFile) = readAndValidateManifestLine($fh, $inputDir));
+}
 
-    # copy data file to output dir (and clean newlines and file name)
-    my ($cleanedFilePath, $type) = copyDataFile($filename, $inputDir, $outputDir);
+sub handleDataFile {
+  my ($sampleName, $filename, $inputDir, $outputDir, $samples, $fileNames) = @_;
 
-    validationError("Sample '$sampleName' with '$type' repeated in manifest.txt") if $samples->{$sampleName}->{$type};
-    $samples->{$sampleName}->{$type} = 1;
+  # ensure file uniqueness
+  my $baseFile = basename($filename);
+  validationError("Repeated file name '$baseFile' in manifest.txt") if $fileNames->{$filename};
+  $fileNames->{$filename} = 1;
 
-    if ($type eq 'bw') {
-      my $msg = validateBwFile($cleanedFilePath);
-      validationError($msg) if $msg;
-    } else {
-      validateTextFile($cleanedFilePath);
-    }
+  # copy data file to output dir (and clean newlines and file name)
+  my ($cleanedFilePath, $type) = copyDataFile($filename, $inputDir, $outputDir);
 
-  } while(($sampleName, $filename) = readAndValidateManifestLine($fh, $inputDir));
+  validationError("Sample '$sampleName' with $type file repeated in manifest.txt") if $samples->{$sampleName}->{$type};
+  $samples->{$sampleName}->{$type} = 1;
+
+  if ($type eq 'bw') {
+    my $msg = validateBwFile($cleanedFilePath);
+    validationError($msg) if $msg;
+  } else {
+    validateTextFile($cleanedFilePath);
+  }
 }
 
 # copy file from inputDir to outputDir (and clean file name)
@@ -131,8 +137,8 @@ sub copyDataFile {
   my $inputPath = "$inputDir/$dataFile";
   my $outputPath = "$outputDir/$out";
 
-  # if a file is .bw or .bigwig, it is type 'bw', otherwise 'txt'
-  my $type = ($out =~ /.*\.(bw|bigwig)$/)? 'bw' : 'txt';
+  # if a file is .bw or .bigwig, it is type 'bw', otherwise 'count'
+  my $type = ($out =~ /.*\.(bw|bigwig)$/)? 'bw' : 'count';
 
   # For binary files (bigwig), just copy directly
   if ($type eq 'bw') {

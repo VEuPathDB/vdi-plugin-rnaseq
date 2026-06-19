@@ -1,0 +1,2 @@
+sample1	counts1.txt
+sample2	counts1.txt

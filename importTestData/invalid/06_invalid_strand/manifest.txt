@@ -1,0 +1,2 @@
+sample1	counts1.txt	sense
+sample2	counts2.txt	antisense
