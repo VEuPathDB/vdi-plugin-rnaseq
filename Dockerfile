@@ -38,7 +38,6 @@ RUN git clone https://github.com/VEuPathDB/vdi-lib-perl-utils.git \
   && git checkout ${LIB_PERL_GIT_COMMIT_SHA} \
   && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
   && cp lib/perl/EncodingDetect.pm /opt/veupathdb/lib/perl \
-  && cp bin/* /opt/veupathdb/bin \
   && rm -rf vdi-lib-perl-utils
 
 COPY bin/ /opt/veupathdb/bin
