@@ -33,7 +33,7 @@ RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && rm -rf vdi-lib-plugin-rnaseq
 
 ARG LIB_PERL_GIT_COMMIT_SHA=2cc9774d83334c720cdd75af83e6c2735804f2ad
-RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
+RUN git clone https://github.com/VEuPathDB/vdi-lib-perl-utils.git \
   && cd vdi-lib-perl-utils \
   && git checkout ${LIB_PERL_GIT_COMMIT_SHA} \
   && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
