@@ -62,7 +62,7 @@ sub readAndValidateManifestLine {
   validationError("Invalid line in manifest file.  Strandedness must be: " . join(', ', @VALID_STRAND_TYPES) . "\n '$line'")
       unless grep( /^$strandInfo$/, @VALID_STRAND_TYPES );
 
-  print STDERR "sample: '$sampleName' countFile: '$countFile' strand: '$strandInfo' bwFile: '$bwFile' \n";
+  print STDERR "sample: '$sampleName' countFile: '$countFile' strand: '$strandInfo' bwFile: '$bwFile' \n\n";
 
   my $path = "$dataFilesDir/$countFile";
   validationError("Counts file in manifest does not exist: '$countFile'")

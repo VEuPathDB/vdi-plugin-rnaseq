@@ -49,11 +49,17 @@ validateAndCopyFiles($fh, \@line, $inputDir, $outputDir);
 
 # there should now be the same number of files in inputDir and outputDir.  If not, there were input files not listed in manifest.
 opendir($dh, $inputDir) or die "can't open dir '$inputDir'\n";
-my $numInputFiles = () = readdir($dh);
+my @inputFiles = sort readdir($dh);
 close($dh);
 opendir($dh, $outputDir) or die "can't open dir '$outputDir'\n";;
-my $numOutputFiles = () = readdir($dh);
-validationError("Files and manifest do not agree.  Wrong number of files.  There should be one row per file.") unless $numInputFiles == $numOutputFiles;
+my @outputFiles = sort readdir($dh);
+my ($inOnly, $outOnly) = pruneCommonFromArrays(\@inputFiles, \@outputFiles);
+
+if (@$inOnly || @$outOnly) {
+  my $outOnlyStr = @$outOnly? " In manifest.txt but not found: " . join(", ", @$outOnly) : "";
+  my $inOnlyStr = @$inOnly? " File(s) not in manifest: " . join(", ", @$inOnly) : "";
+  validationError("Files and manifest do not agree.$outOnlyStr$inOnlyStr") if $outOnlyStr || $inOnlyStr;
+}
 
 ############################################################################################################
 
@@ -204,3 +210,16 @@ sub validateTextFile {
   validationError("File '$baseFile' has only integer scores.  Does not look normalized.") if $columnCount == 2 && !$foundFloat;
 
 } 
+
+sub pruneCommonFromArrays {
+  my ($a, $b) = @_;
+
+  my %seen;
+  @seen{@$a} = ();
+  my @common = grep { exists $seen{$_} } @$b;
+  my %common;
+  @common{@common} = ();
+  my @a1 = grep { !exists $common{$_} } @$a;
+  my @b2 = grep { !exists $common{$_} } @$b;
+  return (\@a1, \@b2);
+}
