@@ -32,12 +32,12 @@ RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cp bin/* /opt/veupathdb/bin \
   && rm -rf vdi-lib-plugin-rnaseq
 
-ARG LIB_PERL_GIT_COMMIT_SHA=2cc9774d83334c720cdd75af83e6c2735804f2ad
+ARG LIB_PERL_GIT_COMMIT_SHA=ddd59288a4d67b0ab3b254129e0543deda446e90
 RUN git clone https://github.com/VEuPathDB/vdi-lib-perl-utils.git \
   && cd vdi-lib-perl-utils \
   && git checkout ${LIB_PERL_GIT_COMMIT_SHA} \
   && mkdir -p /opt/veupathdb/lib/perl /opt/veupathdb/bin \
-  && cp lib/perl/EncodingDetect.pm /opt/veupathdb/lib/perl \
+  && cp lib/perl/*.pm /opt/veupathdb/lib/perl \
   && rm -rf vdi-lib-perl-utils
 
 RUN perl -MCPAN -e 'install qq(JSON)'
