@@ -175,6 +175,7 @@ sub validateTextFile {
       unless scalar(@a) == $columnCount;
     if ($columnCount == 2) {
       validationError("In file '$baseFile' line $linenum, first column should be an ID.") if looks_like_number($a[0]);
+      validationError("In file '$baseFile' line $linenum, count '$a[1]' is not a number.") unless looks_like_number($a[1]);
       $foundFloat |= $a[1] =~ /\d+\.\d+/;
     }
   }
