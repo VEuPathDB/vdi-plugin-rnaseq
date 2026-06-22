@@ -40,6 +40,8 @@ RUN git clone https://github.com/VEuPathDB/vdi-lib-perl-utils.git \
   && cp lib/perl/EncodingDetect.pm /opt/veupathdb/lib/perl \
   && rm -rf vdi-lib-perl-utils
 
+RUN perl -MCPAN -e 'install qq(JSON)'
+
 COPY bin/ /opt/veupathdb/bin
 COPY lib/ /opt/veupathdb/lib
 
