@@ -71,7 +71,7 @@ my ($panPkSh, $psPkSh, $insertProfileSet, $updateProfileSetUnit, $insertProtocol
 #################################################################################
 # discover reference genome and get mapping from provided id to na_feature_id
 #################################################################################
-my $orgNameForFiles = getRefGenome("$filesDir/meta.json");
+my $orgNameForFiles = getRefGenome("$filesDir/vdi-meta.json");
 my ($geneAliases, $transcriptIds) = getGeneAliases($dbh, $orgNameForFiles);
 
 
