@@ -9,8 +9,6 @@ use RnaSeqHandlerCommon;
 use DbiBatchExecutor;
 use BigWigUtils;
 use File::Copy;
-use JSON qw( );
-
 
 my $DEBUG = 0;
 
@@ -91,7 +89,7 @@ while(my ($panName, $countFile, $strand, $bwFile) = readAndValidateManifestLine(
   }
 
   if ($bwFile) {
-    BigWigUtils::installBwFile("$filesDir/$bwFile", $datasetDir);
+    installBwFile("$filesDir/$bwFile", $datasetDir, $dbh, $orgNameForFiles);
   }
 }
 
@@ -261,9 +259,11 @@ sub validateAndProcessTranscriptIds {
 
   my $seenTranscriptIds = {};
   my $geneIds = {};
-
+  my $idCnt;
   foreach my $row (@$fileData) {
     my ($inputId, $score) = @$row;
+
+    $idCnt += 1;
 
     # check for duplicate transcript IDs
     if ($seenTranscriptIds->{$inputId}) {
@@ -297,14 +297,14 @@ sub validateAndProcessTranscriptIds {
   }
 
   # report validation errors if any
-  if ($duplicateCnt || $notMappedCnt) {
+  if ($duplicateCnt || ($notMappedCnt > .2 * $idCnt)) {
     my $errMsg = "Problems with provided transcript IDs in file $filename:\n";
 
     if ($duplicateCnt) {
       $errMsg .= "  $duplicateCnt transcript ID(s) are duplicated. For example: " . join(", ", @duplicateTranscriptIds) . "\n";
     }
-    if ($notMappedCnt) {
-      $errMsg .= "  $notMappedCnt ID(s) are not mappable to our $orgNameForFiles transcript IDs. For example: " . join(", ", @notMappedIds) . "\n";
+    if ($notMappedCnt > .2 * $idCnt) {
+      $errMsg .= "  $notMappedCnt ID(s) out of $idCnt are not mappable to our $orgNameForFiles transcript IDs. For example: " . join(", ", @notMappedIds) . ". This looks like data for a different genome\n";
     }
     validationError($errMsg);
   }
@@ -334,10 +334,12 @@ sub validateAndProcessGeneIds {
   my @notMappedIds;
   my $ambiguousCnt = 0;
   my $notMappedCnt = 0;
-
+  my $idCnt = 0;
   foreach my $row (@$fileData) {
     my ($inputId, $score) = @$row;
 
+    $idCnt += 1;
+    
     # check if input ID maps to gene(s)
     if (!$geneAliases->{$inputId}) {
       push(@notMappedIds, $inputId) unless @notMappedIds >= 10;
@@ -399,12 +401,12 @@ sub validateAndProcessGeneIds {
   }
 
   # report validation errors if any
-  return $geneIds unless $notMappedCnt || $ambiguousCnt || $clashingCnt;
+  return $geneIds unless ($notMappedCnt > $idCnt * .2) || $ambiguousCnt || $clashingCnt;
 
   my $errMsg = "Problems with provided IDs in file $filename:\n";
 
-  if ($notMappedCnt) {
-    $errMsg .= "  $notMappedCnt ID(s) are not mappable to our $orgNameForFiles gene IDs. For example: " . join(", ", @notMappedIds) . "\n";
+  if ($notMappedCnt > $idCnt * .2) {
+    $errMsg .= "  $notMappedCnt ID(s) out of $idCnt are not mappable to our $orgNameForFiles gene IDs. For example: " . join(", ", @notMappedIds) . ". This looks like data for a different genome.\n";
   }
   if ($ambiguousCnt) {
     $errMsg .= "  $ambiguousCnt ID(s) map to more than one of our gene IDs. For example: " . join(", ", @ambiguousIds) . "\n";
@@ -545,35 +547,6 @@ sub getGeneAliases {
   return ($geneAliases, $transcriptIds);
 }
 
-sub validationError {
-  my ($msg) = @_;
-
-  print STDOUT "$msg\n";
-  exit($VALIDATION_ERROR_CODE);
-}
-
-# return the orgNameForFiles of the genome declared as a dependency
-sub getRefGenome {
-  my ($metaJsonFile) = @_;
-
-  my $json_text = do {
-    open(my $json_fh, "<:encoding(UTF-8)", $metaJsonFile)
-      or die("Can't open \"$metaJsonFile\": $!\n");
-    local $/;
-    <$json_fh>
-  };
-
-  my $json = JSON->new;
-  my $metadata = $json->decode($json_text);
-
-  my $dependencies = $metadata->{dependencies};
-
-  validationError("More than one reference genome") if (@$dependencies != 1);
-
-  my $genomeIdentifier = $dependencies->[0]->{resourceIdentifier};
-
-  # extract org name from eg PlasmoDB-51_Pfalciparum3D7_Genome
-  $genomeIdentifier =~ /^[A-Za-z]+-\d+_(.+)_Genome/ || validationError("Invalid genome resource format: $genomeIdentifier");
-  my $orgNameForFiles = $1;
-  return $orgNameForFiles;
+END {
+  $dbh->disconnect() if $dbh;
 }

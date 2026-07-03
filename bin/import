@@ -91,7 +91,7 @@ sub validateAndCopyFiles {
 
   my ($sampleName, $countFile, $strandInfo, $bwFile) = @$firstLine;
 
-  # read manifest file, and process each line
+  # read manifest file, and process each line. might have either or both type.
   do {
     handleDataFile($sampleName, $countFile, $inputDir, $outputDir, $samples, $fileNames) if $countFile;
     handleDataFile($sampleName, $bwFile, $inputDir, $outputDir, $samples, $fileNames) if $bwFile;
@@ -113,8 +113,7 @@ sub handleDataFile {
   $samples->{$sampleName}->{$type} = 1;
 
   if ($type eq 'bw') {
-    my $msg = validateBwFile($cleanedFilePath);
-    validationError($msg) if $msg;
+    validateBwFile($cleanedFilePath);
   } else {
     validateTextFile($cleanedFilePath);
   }

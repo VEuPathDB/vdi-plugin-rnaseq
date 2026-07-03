@@ -1,13 +1,13 @@
 package RnaSeqHandlerCommon;
 
 use strict;
+use BigWigUtils;
 use Exporter;
 our @ISA = 'Exporter';
-our @EXPORT = qw($MANIFEST_FILE $VALIDATION_ERROR_CODE readAndValidateManifestLine validationError);
+our @EXPORT = qw($MANIFEST_FILE readAndValidateManifestLine);
 
 # constants
 our $MANIFEST_FILE = 'manifest.txt';
-our $VALIDATION_ERROR_CODE = 99;
 
 #my @VALID_STRAND_TYPES = ('unstranded', 'sense', 'antisense', 'firststrand', 'secondstrand');
 my @VALID_STRAND_TYPES = ('unstranded'); # only support unstranded for now.
@@ -71,13 +71,6 @@ sub readAndValidateManifestLine {
     unless !$bwFile || -e "$dataFilesDir/$bwFile";
 
   return ($sampleName, $countFile, $strandInfo, $bwFile);
-}
-
-sub validationError {
-  my ($msg) = @_;
-
-  print STDOUT "$msg\n";
-  exit($VALIDATION_ERROR_CODE);
 }
 
 
