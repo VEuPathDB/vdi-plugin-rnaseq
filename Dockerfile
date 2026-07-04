@@ -23,7 +23,7 @@ RUN mkdir -p /opt/veupathdb/lib/perl \
   && unzip utils.zip \
   && rm utils.zip
 
-ARG LIB_RNASEQ_GIT_COMMIT_SHA=9298bc8942c24b47a518ba29768f8254d8757ab9
+ARG LIB_RNASEQ_GIT_COMMIT_SHA=38d677635df645a522a36014f1e6b83db50cf009
 RUN git clone https://github.com/VEuPathDB/vdi-lib-plugin-rnaseq.git \
   && cd vdi-lib-plugin-rnaseq \
   && git checkout ${LIB_RNASEQ_GIT_COMMIT_SHA} \
