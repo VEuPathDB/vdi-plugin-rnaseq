@@ -198,8 +198,7 @@ sub validateTxtFileIds {
   } elsif ($header =~ /\t(.+)$/) {       # allow any column heading for the score column
     $scoreIndex = 1;
   } else {
-    validationError("Unrecognized header record: '$header'.
-Not a valid transcript abundance file. File: $filename");
+    validationError("$filename is not a valid transcript abundance file.\n  Unrecognized header record: '$header'.");
   }
 
   # First pass: read all data and determine ID type
@@ -234,7 +233,7 @@ Not a valid transcript abundance file. File: $filename");
   # Determine mode: transcript, gene, or mixed
   my $isTranscriptMode = 0;
   if ($transcriptIdCount > 0 && $geneIdCount > 0) {
-    validationError("File $filename has mixed ID types. There are $transcriptIdCount transcript IDs, but not all IDs are valid transcript IDs (found $geneIdCount gene aliases and $unmappedCount unmapped IDs).");
+    validationError("File $filename has mixed ID types.\n  There are $transcriptIdCount transcript IDs, but not all IDs are valid transcript IDs.\n  (Found $geneIdCount gene aliases and $unmappedCount unmapped IDs).");
   } elsif ($transcriptIdCount > 0) {
     $isTranscriptMode = 1;
   }
@@ -406,13 +405,13 @@ sub validateAndProcessGeneIds {
   my $errMsg = "Problems with provided IDs in file $filename:\n";
 
   if ($notMappedCnt > $idCnt * .2) {
-    $errMsg .= "  $notMappedCnt ID(s) out of $idCnt are not mappable to our $orgNameForFiles gene IDs. For example: " . join(", ", @notMappedIds) . ". This looks like data for a different genome.\n";
+    $errMsg .= "  $notMappedCnt ID(s) out of $idCnt are not mappable to our $orgNameForFiles gene IDs.\n  For example: " . join(", ", @notMappedIds) . ".\n  This looks like data for a different genome.\n";
   }
   if ($ambiguousCnt) {
-    $errMsg .= "  $ambiguousCnt ID(s) map to more than one of our gene IDs. For example: " . join(", ", @ambiguousIds) . "\n";
+    $errMsg .= "  $ambiguousCnt ID(s) map to more than one of our gene IDs.\n  For example: " . join(", ", @ambiguousIds) . "\n";
   }
   if ($clashingCnt) {
-    $errMsg .= "  $clashingCnt of our gene IDs have multiple input IDs with different scores. For example:\n    " . join("\n    ", @clashingIdsPerGene) . "\n";
+    $errMsg .= "  $clashingCnt of our gene IDs have multiple input IDs with different scores.\n  For example:\n    " . join("\n    ", @clashingIdsPerGene) . "\n";
   }
   validationError($errMsg);
 }
@@ -458,8 +457,7 @@ sub installTxtFile {
   } elsif ($header =~ /\t(.+)$/) { # allow any column heading for the count column.  typically FPKM or TPM
     $unit = $1;
   } else {
-    validationError("Unrecognized header record: '$header'.
-Not a valid transcript abundance file. File: $filename");
+    validationError("$filename is not a valid transcript abundance file.\n  Unrecognized header record: '$header'.");
   }
 
   print STDERR "execute update profile set unit $psId $unit\n" if $DEBUG;

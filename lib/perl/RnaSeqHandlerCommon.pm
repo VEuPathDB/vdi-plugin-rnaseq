@@ -26,8 +26,8 @@ sub readAndValidateManifestLine {
 
   my @line = split(/\t/, $line);
 
-  validationError("Invalid manifest file.  Wrong number of columns. Must be tab delimited, with these columns: sample name, counts file, 'stranded'(optional), bigwig file (optional).\n '$line'")
-    unless scalar(@line) >= 2 || scalar(@line) <= 4;  # third column for now must be 'stranded', so it is optional
+  validationError("Invalid manifest file.  Wrong number of columns.\n  Must be tab delimited, with these columns: sample name, counts file, 'stranded'(optional), bigwig file (optional).\n '$line'")
+    unless scalar(@line) >= 2 && scalar(@line) <= 4;  # third column for now must be 'stranded', so it is optional
 
   my ($sampleName, $filename, $strandInfo, $bwFile) = @line;
 
@@ -40,7 +40,7 @@ sub readAndValidateManifestLine {
   if ($line[1] =~ /\.bw$|\.bigwig/) {
     validationError("Invalid line in manifest file. Has more than one bigwig file. \n '$line'")
       if ($line[2] =~ /\.bw$|\.bigwig/ || $line[3] =~ /\.bw$|\.bigwig/);
-    validationError("Invalid line in manifest file. If bigwig file in second column, fourth column not allowed.\n '$line'")
+    validationError("Invalid line in manifest file.\n  If bigwig file in second column, fourth column not allowed.\n '$line'")
       if $line[3];
     $bwFile = $line[1];
     $strandInfo = $line[2];
@@ -52,7 +52,7 @@ sub readAndValidateManifestLine {
   } else {
     $countFile = $line[1];
     $strandInfo = $line[2];
-    validationError("Invalid line in manifest file.  Fourth column must be .bw or .bigwig file\n '$line'")
+    validationError("Invalid line in manifest file.\n  Fourth column must be .bw or .bigwig file\n '$line'")
       if ($line[3] && $line[3] !~ /\.bw$|\.bigwig/);
     $bwFile = $line[3];
   }
