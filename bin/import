@@ -8,6 +8,7 @@ use File::Basename;
 use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
 use BigWigUtils;
+use VdiPerlUtils;
 use CopyAndCleanTextFile;
 use Scalar::Util qw(looks_like_number);
 use File::Basename;
