@@ -8,11 +8,12 @@ use lib "$FindBin::Bin/../lib/perl";
 use RnaSeqHandlerCommon;
 use DbiBatchExecutor;
 use BigWigUtils;
+use VdiPerlUtils;
 use File::Copy;
 
 my $DEBUG = 0;
 
-my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_PLATFORM', 'DB_USER', 'DB_PASS', 'DB_SCHEMA', 'DATA_FILES');
+my @envVars = ('DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS', 'DB_SCHEMA', 'DATA_FILES');
 
 sub usage {
   my $envStr = '$' . join(", \$", @envVars);
@@ -53,14 +54,9 @@ chmod(0775, $datasetDir) || die "Failed chmod of $datasetDir\n"; # rwxrwxr-x
 ##################################################
 # initialization for installing txt files to appdb
 ##################################################
-my $connectString = $ENV{DB_PLATFORM} eq 'Oracle'?
-    "dbi:Oracle://$ENV{DB_HOST}:$ENV{DB_PORT}/$ENV{DB_NAME}" :
-    "DBI:Pg:dbname=$ENV{DB_NAME};host=$ENV{DB_HOST};port=$ENV{DB_PORT}";
-
-my $dbh = DBI->connect($connectString, $ENV{DB_USER}, $ENV{DB_PASS}) || die "Couldn't connect to database: " . DBI->errstr;
-
-$dbh->{RaiseError} = 1;
+my $dbh = getDbh();
 $dbh->{AutoCommit} = 0;
+
 my %profileSetIds;
 my $orderNum = 1;
 my $count = 0;
