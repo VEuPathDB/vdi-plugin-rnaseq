@@ -492,13 +492,7 @@ sub installTxtFile {
 sub getGeneAliases {
   my ($dbh, $orgNameForFiles) = @_;
 
-  my $sql = "select internal_abbrev from apidbtuning.organismattributes where name_for_filenames = '$orgNameForFiles'";
-
-  print STDERR "execute query to get org_abbrev\n";
-  my $sh = $dbh->prepare($sql);
-  $sh->execute();
-  my ($orgAbbrev) = $sh->fetchrow_array();
-  validationError("Can't find organism $orgNameForFiles") unless $orgAbbrev;
+  my $orgAbbrev = getOrgAbbrev($dbh, $orgNameForFiles);
 
   # map all gene aliases (not including transcripts) to the gene source_id and na_feature_id
   $sql = "SELECT a.gene AS gene_source_id, a.ID as alias, ga.na_feature_id
